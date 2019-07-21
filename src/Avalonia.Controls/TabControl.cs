@@ -1,12 +1,15 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
+using System.Linq;
 using Avalonia.Controls.Generators;
+using Avalonia.Controls.Mixins;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.VisualTree;
 
 namespace Avalonia.Controls
 {
@@ -65,6 +68,10 @@ namespace Avalonia.Controls
             SelectionModeProperty.OverrideDefaultValue<TabControl>(SelectionMode.AlwaysSelected);
             ItemsPanelProperty.OverrideDefaultValue<TabControl>(DefaultPanel);
             AffectsMeasure<TabControl>(TabStripPlacementProperty);
+            ContentControlMixin.Attach<TabControl>(
+                SelectedContentProperty,
+                x => x.LogicalChildren,
+                "PART_SelectedContentHost");
         }
 
         /// <summary>
@@ -142,7 +149,7 @@ namespace Avalonia.Controls
 
             ItemsPresenterPart = e.NameScope.Get<ItemsPresenter>("PART_ItemsPresenter");
 
-            ContentPart = e.NameScope.Get<ContentPresenter>("PART_Content");
+            ContentPart = e.NameScope.Get<ContentPresenter>("PART_SelectedContentHost");
         }
 
         /// <inheritdoc/>
@@ -161,9 +168,23 @@ namespace Avalonia.Controls
         {
             base.OnPointerPressed(e);
 
-            if (e.MouseButton == MouseButton.Left)
+            if (e.MouseButton == MouseButton.Left && e.Pointer.Type == PointerType.Mouse)
             {
                 e.Handled = UpdateSelectionFromEventSource(e.Source);
+            }
+        }
+
+        protected override void OnPointerReleased(PointerReleasedEventArgs e)
+        {
+            if (e.MouseButton == MouseButton.Left && e.Pointer.Type != PointerType.Mouse)
+            {
+                var container = GetContainerFromEventSource(e.Source);
+                if (container != null
+                    && container.GetVisualsAt(e.GetPosition(container))
+                        .Any(c => container == c || container.IsVisualAncestorOf(c)))
+                {
+                    e.Handled = UpdateSelectionFromEventSource(e.Source);
+                }
             }
         }
     }

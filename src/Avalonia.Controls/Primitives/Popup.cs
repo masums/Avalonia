@@ -6,7 +6,6 @@ using System.Linq;
 using Avalonia.Input;
 using Avalonia.Input.Raw;
 using Avalonia.Interactivity;
-using Avalonia.Layout;
 using Avalonia.LogicalTree;
 using Avalonia.Metadata;
 using Avalonia.VisualTree;
@@ -252,9 +251,9 @@ namespace Avalonia.Controls.Primitives
                 else
                 {
                     var parentPopuproot = _topLevel as PopupRoot;
-                    if (parentPopuproot != null && parentPopuproot.Parent != null)
+                    if (parentPopuproot?.Parent is Popup popup)
                     {
-                        ((Popup)(parentPopuproot.Parent)).Closed += ParentClosed;
+                        popup.Closed += ParentClosed;
                     }
                 }
                 _topLevel.AddHandler(PointerPressedEvent, PointerPressedOutside, RoutingStrategies.Tunnel);
@@ -270,9 +269,10 @@ namespace Avalonia.Controls.Primitives
                 _popupRoot.SnapInsideScreenEdges();
             }
 
-            _ignoreIsOpenChanged = true;
-            IsOpen = true;
-            _ignoreIsOpenChanged = false;
+            using (BeginIgnoringIsOpen())
+            {
+                IsOpen = true;
+            }
 
             Opened?.Invoke(this, EventArgs.Empty);
         }
@@ -293,9 +293,9 @@ namespace Avalonia.Controls.Primitives
                     else
                     {
                         var parentPopuproot = _topLevel as PopupRoot;
-                        if (parentPopuproot != null && parentPopuproot.Parent != null)
+                        if (parentPopuproot?.Parent is Popup popup)
                         {
-                            ((Popup)parentPopuproot.Parent).Closed -= ParentClosed;
+                            popup.Closed -= ParentClosed;
                         }
                     }
                     _nonClientListener?.Dispose();
@@ -305,7 +305,11 @@ namespace Avalonia.Controls.Primitives
                 _popupRoot.Hide();
             }
 
-            IsOpen = false;
+            using (BeginIgnoringIsOpen())
+            {
+                IsOpen = false;
+            }
+
             Closed?.Invoke(this, EventArgs.Empty);
         }
 
@@ -380,7 +384,7 @@ namespace Avalonia.Controls.Primitives
         /// Gets the position for the popup based on the placement properties.
         /// </summary>
         /// <returns>The popup's position in screen coordinates.</returns>
-        protected virtual Point GetPosition()
+        protected virtual PixelPoint GetPosition()
         {
             var result = GetPosition(PlacementTarget ?? this.GetVisualParent<Control>(), PlacementMode, PopupRoot,
                 HorizontalOffset, VerticalOffset);
@@ -388,35 +392,31 @@ namespace Avalonia.Controls.Primitives
             return result;
         }
 
-        internal static Point GetPosition(Control target, PlacementMode placement, PopupRoot popupRoot, double horizontalOffset, double verticalOffset)
+        internal static PixelPoint GetPosition(Control target, PlacementMode placement, PopupRoot popupRoot, double horizontalOffset, double verticalOffset)
         {
-            var zero = default(Point);
-            var mode = placement;
-
-            if (target?.GetVisualRoot() == null)
-            {
-                mode = PlacementMode.Pointer;
-            }
+            var root = target?.GetVisualRoot();
+            var mode = root != null ? placement : PlacementMode.Pointer;
+            var scaling = root?.RenderScaling ?? 1;
 
             switch (mode)
             {
                 case PlacementMode.Pointer:
                     if (popupRoot != null)
                     {
-                        // Scales the Horizontal and Vertical offset to screen co-ordinates.
-                        var screenOffset = new Point(horizontalOffset * (popupRoot as ILayoutRoot).LayoutScaling,
-                            verticalOffset * (popupRoot as ILayoutRoot).LayoutScaling);
-                        return (((IInputRoot)popupRoot)?.MouseDevice?.Position ?? default(Point)) + screenOffset;
+                        var screenOffset = PixelPoint.FromPoint(new Point(horizontalOffset, verticalOffset), scaling);
+                        var mouseOffset = ((IInputRoot)popupRoot)?.MouseDevice?.Position ?? default;
+                        return new PixelPoint(
+                            screenOffset.X + mouseOffset.X,
+                            screenOffset.Y + mouseOffset.Y);
                     }
 
-                    return default(Point);
+                    return default;
 
                 case PlacementMode.Bottom:
-                    return target?.PointToScreen(new Point(0 + horizontalOffset, target.Bounds.Height + verticalOffset)) ??
-                           zero;
+                    return target?.PointToScreen(new Point(0 + horizontalOffset, target.Bounds.Height + verticalOffset)) ?? default;
 
                 case PlacementMode.Right:
-                    return target?.PointToScreen(new Point(target.Bounds.Width + horizontalOffset, 0 + verticalOffset)) ?? zero;
+                    return target?.PointToScreen(new Point(target.Bounds.Width + horizontalOffset, 0 + verticalOffset)) ?? default;
 
                 default:
                     throw new InvalidOperationException("Invalid value for Popup.PlacementMode");
@@ -425,9 +425,9 @@ namespace Avalonia.Controls.Primitives
 
         private void ListenForNonClientClick(RawInputEventArgs e)
         {
-            var mouse = e as RawMouseEventArgs;
+            var mouse = e as RawPointerEventArgs;
 
-            if (!StaysOpen && mouse?.Type == RawMouseEventType.NonClientLeftButtonDown)
+            if (!StaysOpen && mouse?.Type == RawPointerEventType.NonClientLeftButtonDown)
             {
                 Close();
             }
@@ -469,6 +469,27 @@ namespace Avalonia.Controls.Primitives
             if (!StaysOpen)
             {
                 Close();
+            }
+        }
+
+        private IgnoreIsOpenScope BeginIgnoringIsOpen()
+        {
+            return new IgnoreIsOpenScope(this);
+        }
+
+        private readonly struct IgnoreIsOpenScope : IDisposable
+        {
+            private readonly Popup _owner;
+
+            public IgnoreIsOpenScope(Popup owner)
+            {
+                _owner = owner;
+                _owner._ignoreIsOpenChanged = true;
+            }
+
+            public void Dispose()
+            {
+                _owner._ignoreIsOpenChanged = false;
             }
         }
     }

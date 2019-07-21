@@ -200,6 +200,22 @@ namespace Avalonia.Controls.UnitTests
         }
 
         [Fact]
+        public void Showing_Should_Raise_Opened()
+        {
+            using (UnitTestApplication.Start(TestServices.StyledWindow))
+            {
+                var target = new TestWindowBase();
+                var raised = false;
+
+                target.Opened += (s, e) => raised = true;
+
+                target.Show();
+
+                Assert.True(raised);
+            }
+        }
+
+        [Fact]
         public void Hiding_Should_Stop_Renderer()
         {
 
@@ -237,12 +253,12 @@ namespace Avalonia.Controls.UnitTests
 
         private FuncControlTemplate<TestWindowBase> CreateTemplate()
         {
-            return new FuncControlTemplate<TestWindowBase>(x =>
+            return new FuncControlTemplate<TestWindowBase>((x, scope) =>
                 new ContentPresenter
                 {
                     Name = "PART_ContentPresenter",
                     [!ContentPresenter.ContentProperty] = x[!ContentControl.ContentProperty],
-                });
+                }.RegisterInNameScope(scope));
         }
 
         private class TestWindowBase : WindowBase
@@ -259,12 +275,6 @@ namespace Avalonia.Controls.UnitTests
             public TestWindowBase(IWindowBaseImpl impl)
                 : base(impl)
             {
-            }
-
-            protected override void HandleApplicationExiting()
-            {
-                base.HandleApplicationExiting();
-                IsClosed = true;
             }
         }
     }

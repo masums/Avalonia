@@ -3,6 +3,7 @@
 
 using System;
 using System.Globalization;
+using Avalonia.Animation.Animators;
 using Avalonia.Utilities;
 
 namespace Avalonia
@@ -12,6 +13,11 @@ namespace Avalonia
     /// </summary>
     public readonly struct Rect
     {
+        static Rect()
+        {
+            Animation.Animation.RegisterAnimator<RectAnimator>(prop => typeof(Rect).IsAssignableFrom(prop.PropertyType));
+        }
+
         /// <summary>
         /// An empty rectangle.
         /// </summary>
@@ -250,7 +256,7 @@ namespace Avalonia
         /// <summary>
         /// Inflates the rectangle.
         /// </summary>
-        /// <param name="thickness">The thickness.</param>
+        /// <param name="thickness">The thickness to be subtracted for each side of the rectangle.</param>
         /// <returns>The inflated rectangle.</returns>
         public Rect Inflate(double thickness)
         {
@@ -260,7 +266,7 @@ namespace Avalonia
         /// <summary>
         /// Inflates the rectangle.
         /// </summary>
-        /// <param name="thickness">The thickness.</param>
+        /// <param name="thickness">The thickness to be subtracted for each side of the rectangle.</param>
         /// <returns>The inflated rectangle.</returns>
         public Rect Inflate(Thickness thickness)
         {
@@ -272,20 +278,18 @@ namespace Avalonia
         /// <summary>
         /// Deflates the rectangle.
         /// </summary>
-        /// <param name="thickness">The thickness.</param>
+        /// <param name="thickness">The thickness to be subtracted for each side of the rectangle.</param>
         /// <returns>The deflated rectangle.</returns>
-        /// <remarks>The deflated rectangle size cannot be less than 0.</remarks>
         public Rect Deflate(double thickness)
         {
-            return Deflate(new Thickness(thickness / 2));
+            return Deflate(new Thickness(thickness));
         }
 
         /// <summary>
         /// Deflates the rectangle by a <see cref="Thickness"/>.
         /// </summary>
-        /// <param name="thickness">The thickness.</param>
+        /// <param name="thickness">The thickness to be subtracted for each side of the rectangle.</param>
         /// <returns>The deflated rectangle.</returns>
-        /// <remarks>The deflated rectangle size cannot be less than 0.</remarks>
         public Rect Deflate(Thickness thickness)
         {
             return new Rect(

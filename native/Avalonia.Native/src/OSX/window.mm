@@ -353,6 +353,16 @@ public:
             Cursor* avnCursor = dynamic_cast<Cursor*>(cursor);
             this->cursor = avnCursor->GetNative();
             UpdateCursor();
+            
+            if(avnCursor->IsHidden())
+            {
+                [NSCursor hide];
+            }
+            else
+            {
+                [NSCursor unhide];
+            }
+            
             return S_OK;
         }
     }
@@ -425,7 +435,7 @@ private:
                 [[Window parentWindow] removeChildWindow:Window];
             WindowBaseImpl::Show();
             
-            return SetWindowState(_lastWindowState);
+            return SetWindowState(Normal);
         }
     }
     
@@ -1184,6 +1194,25 @@ NSArray* AllLoopModes = [NSArray arrayWithObjects: NSDefaultRunLoopMode, NSEvent
     }
 }
 
+- (void)windowDidMiniaturize:(NSNotification *)notification
+{
+    auto parent = dynamic_cast<IWindowStateChanged*>(_parent.operator->());
+    
+    if(parent != nullptr)
+    {
+        parent->WindowStateChanged();
+    }
+}
+
+- (void)windowDidDeminiaturize:(NSNotification *)notification
+{
+    auto parent = dynamic_cast<IWindowStateChanged*>(_parent.operator->());
+    
+    if(parent != nullptr)
+    {
+        parent->WindowStateChanged();
+    }
+}
 
 - (BOOL)windowShouldZoom:(NSWindow *)window toFrame:(NSRect)newFrame
 {

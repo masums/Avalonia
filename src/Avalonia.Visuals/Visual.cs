@@ -8,8 +8,11 @@ using System.Reactive.Linq;
 using Avalonia.Collections;
 using Avalonia.Data;
 using Avalonia.Logging;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
+using Avalonia.Metadata;
 using Avalonia.Rendering;
+using Avalonia.Utilities;
 using Avalonia.VisualTree;
 
 namespace Avalonia
@@ -23,6 +26,7 @@ namespace Avalonia
     /// <see cref="IRenderer"/> to render the control. To traverse the visual tree, use the
     /// extension methods defined in <see cref="VisualExtensions"/>.
     /// </remarks>
+    [UsableDuringInitialization]
     public class Visual : StyledElement, IVisual
     {
         /// <summary>
@@ -288,29 +292,6 @@ namespace Avalonia
         }
 
         /// <summary>
-        /// Returns a transform that transforms the visual's coordinates into the coordinates
-        /// of the specified <paramref name="visual"/>.
-        /// </summary>
-        /// <param name="visual">The visual to translate the coordinates to.</param>
-        /// <returns>
-        /// A <see cref="Matrix"/> containing the transform or null if the visuals don't share a
-        /// common ancestor.
-        /// </returns>
-        public Matrix? TransformToVisual(IVisual visual)
-        {
-            var common = this.FindCommonVisualAncestor(visual);
-
-            if (common != null)
-            {
-                var thisOffset = GetOffsetFrom(common, this);
-                var thatOffset = GetOffsetFrom(common, visual);
-                return -thatOffset * thisOffset;
-            }
-
-            return null;
-        }
-
-        /// <summary>
         /// Indicates that a property change should cause <see cref="InvalidateVisual"/> to be
         /// called.
         /// </summary>
@@ -346,12 +327,12 @@ namespace Avalonia
                 {
                     if (e.OldValue is IAffectsRender oldValue)
                     {
-                        oldValue.Invalidated -= sender.AffectsRenderInvalidated;
+                        WeakEventHandlerManager.Unsubscribe<EventArgs, T>(oldValue, nameof(oldValue.Invalidated), sender.AffectsRenderInvalidated);
                     }
 
                     if (e.NewValue is IAffectsRender newValue)
                     {
-                        newValue.Invalidated += sender.AffectsRenderInvalidated;
+                        WeakEventHandlerManager.Subscribe<IAffectsRender, EventArgs, T>(newValue, nameof(newValue.Invalidated), sender.AffectsRenderInvalidated);                        
                     }
 
                     sender.InvalidateVisual();
@@ -448,43 +429,32 @@ namespace Avalonia
             RaisePropertyChanged(VisualParentProperty, oldParent, newParent, BindingPriority.LocalValue);
         }
 
-        /// <summary>
-        /// Gets the visual offset from the specified ancestor.
-        /// </summary>
-        /// <param name="ancestor">The ancestor visual.</param>
-        /// <param name="visual">The visual.</param>
-        /// <returns>The visual offset.</returns>
-        private static Matrix GetOffsetFrom(IVisual ancestor, IVisual visual)
+        protected override sealed void LogBindingError(AvaloniaProperty property, Exception e)
         {
-            var result = Matrix.Identity;
-
-            while (visual != ancestor)
+            // Don't log a binding error unless the control is attached to a logical or visual tree.
+            // In theory this should only need to check for logical tree attachment, but in practise
+            // due to ContentControlMixin only taking effect when the template has finished being
+            // applied, some controls are attached to the visual tree before the logical tree.
+            if (((ILogical)this).IsAttachedToLogicalTree || ((IVisual)this).IsAttachedToVisualTree)
             {
-                if (visual.RenderTransform?.Value != null)
+                if (e is BindingChainException b &&
+                    string.IsNullOrEmpty(b.ExpressionErrorPoint) &&
+                    DataContext == null)
                 {
-                    var origin = visual.RenderTransformOrigin.ToPixels(visual.Bounds.Size);
-                    var offset = Matrix.CreateTranslation(origin);
-                    var renderTransform = (-offset) * visual.RenderTransform.Value * (offset);
-
-                    result *= renderTransform;
+                    // The error occurred at the root of the binding chain and DataContext is null;
+                    // don't log this - the DataContext probably hasn't been set up yet.
+                    return;
                 }
 
-                var topLeft = visual.Bounds.TopLeft;
-
-                if (topLeft != default)
-                {
-                    result *= Matrix.CreateTranslation(topLeft);
-                }
-
-                visual = visual.VisualParent;
-
-                if (visual == null)
-                {
-                    throw new ArgumentException("'visual' is not a descendant of 'ancestor'.");
-                }
+                Logger.Log(
+                    LogEventLevel.Warning,
+                    LogArea.Binding,
+                    this,
+                    "Error in binding to {Target}.{Property}: {Message}",
+                    this,
+                    property,
+                    e.Message);
             }
-
-            return result;
         }
 
         /// <summary>
@@ -522,7 +492,7 @@ namespace Avalonia
         {
             if (c == null)
             {
-                throw new ArgumentNullException("Cannot add null to VisualChildren.");
+                throw new ArgumentNullException(nameof(c), "Cannot add null to VisualChildren.");
             }
 
             if (c.VisualParent != null)

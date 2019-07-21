@@ -8,6 +8,8 @@ namespace Avalonia.Visuals.UnitTests.VisualTree
 {
     class MockRenderInterface : IPlatformRenderInterface
     {
+        public IEnumerable<string> InstalledFontNames => new string[0];
+
         public IFormattedTextImpl CreateFormattedText(
             string text,
             Typeface typeface,
@@ -50,6 +52,21 @@ namespace Avalonia.Visuals.UnitTests.VisualTree
         }
 
         public IWriteableBitmapImpl CreateWriteableBitmap(PixelSize size, Vector dpi, PixelFormat? fmt)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IGeometryImpl CreateEllipseGeometry(Rect rect)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IGeometryImpl CreateLineGeometry(Point p1, Point p2)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IGeometryImpl CreateRectangleGeometry(Rect rect)
         {
             throw new NotImplementedException();
         }

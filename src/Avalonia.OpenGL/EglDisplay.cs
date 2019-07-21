@@ -1,5 +1,5 @@
 using System;
-using System.ComponentModel;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Avalonia.Platform.Interop;
 using static Avalonia.OpenGL.EglConsts;
@@ -14,31 +14,52 @@ namespace Avalonia.OpenGL
         private readonly int[] _contextAttributes;
 
         public IntPtr Handle => _display;
+        private AngleOptions.PlatformApi? _angleApi;
         public EglDisplay(EglInterface egl)
         {
             _egl = egl;  
 
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && _egl.GetPlatformDisplayEXT != null)
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                foreach (var dapi in new[] {EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE})
+                if (_egl.GetPlatformDisplayEXT == null)
+                    throw new OpenGlException("eglGetPlatformDisplayEXT is not supported by libegl.dll");
+                
+                var allowedApis = AvaloniaLocator.Current.GetService<AngleOptions>()?.AllowedPlatformApis
+                              ?? new List<AngleOptions.PlatformApi> {AngleOptions.PlatformApi.DirectX9};              
+                
+                foreach (var platformApi in allowedApis)
                 {
+                    int dapi;
+                    if (platformApi == AngleOptions.PlatformApi.DirectX9)
+                        dapi = EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE;
+                    else if (platformApi == AngleOptions.PlatformApi.DirectX11)
+                        dapi = EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE;
+                    else 
+                        continue;
+                    
                     _display = _egl.GetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE, IntPtr.Zero, new[]
                     {
                         EGL_PLATFORM_ANGLE_TYPE_ANGLE, dapi, EGL_NONE
                     });
-                    if(_display != IntPtr.Zero)
+                    if (_display != IntPtr.Zero)
+                    {
+                        _angleApi = platformApi;
                         break;
+                    }
                 }
+
+                if (_display == IntPtr.Zero)
+                    throw new OpenGlException("Unable to create ANGLE display");
             }
 
             if (_display == IntPtr.Zero)
                 _display = _egl.GetDisplay(IntPtr.Zero);
             
-            if(_display == IntPtr.Zero)
-                throw new OpenGlException("eglGetDisplay failed");
-            
+            if (_display == IntPtr.Zero)
+                throw OpenGlException.GetFormattedException("eglGetDisplay", _egl);
+
             if (!_egl.Initialize(_display, out var major, out var minor))
-                throw new OpenGlException("eglInitialize failed");
+                throw OpenGlException.GetFormattedException("eglInitialize", _egl);
 
             foreach (var cfg in new[]
             {
@@ -65,40 +86,36 @@ namespace Avalonia.OpenGL
                 if (!_egl.BindApi(cfg.Api))
                     continue;
 
-                var attribs = new[]
+                foreach(var stencilSize in new[]{8, 1, 0})
+                foreach (var depthSize in new []{8, 1, 0})
                 {
-                    EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-                    EGL_RENDERABLE_TYPE, cfg.RenderableTypeBit,
-                    EGL_RED_SIZE, 8,
-                    EGL_GREEN_SIZE, 8,
-                    EGL_BLUE_SIZE, 8,
-                    EGL_ALPHA_SIZE, 8,
-                    EGL_STENCIL_SIZE, 8,
-                    EGL_DEPTH_SIZE, 8,
-                    EGL_NONE
-                };
-                if (!_egl.ChooseConfig(_display, attribs, out _config, 1, out int numConfigs))
-                    continue;
-                if (numConfigs == 0)
-                    continue;
-                _contextAttributes = cfg.Attributes;
-                Type = cfg.Type;
+                    var attribs = new[]
+                    {
+                        EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+
+                        EGL_RENDERABLE_TYPE, cfg.RenderableTypeBit,
+
+                        EGL_RED_SIZE, 8,
+                        EGL_GREEN_SIZE, 8,
+                        EGL_BLUE_SIZE, 8,
+                        EGL_ALPHA_SIZE, 8,
+                        EGL_STENCIL_SIZE, stencilSize,
+                        EGL_DEPTH_SIZE, depthSize,
+                        EGL_NONE
+                    };
+                    if (!_egl.ChooseConfig(_display, attribs, out _config, 1, out int numConfigs))
+                        continue;
+                    if (numConfigs == 0)
+                        continue;
+                    _contextAttributes = cfg.Attributes;
+                    Type = cfg.Type;
+                }
             }
 
             if (_contextAttributes == null)
                 throw new OpenGlException("No suitable EGL config was found");
-            
-            GlInterface = new GlInterface((proc, optional) =>
-            {
-
-                using (var u = new Utf8Buffer(proc))
-                {
-                    var rv = _egl.GetProcAddress(u);
-                    if (rv == IntPtr.Zero && !optional)
-                        throw new OpenGlException("Missing function " + proc);
-                    return rv;
-                }
-            });
+               
+            GlInterface = GlInterface.FromNativeUtf8GetProcAddress(b => _egl.GetProcAddress(b));
         }
 
         public EglDisplay() : this(new EglInterface())
@@ -108,12 +125,13 @@ namespace Avalonia.OpenGL
         
         public GlDisplayType Type { get; }
         public GlInterface GlInterface { get; }
+        public EglInterface EglInterface => _egl;
         public IGlContext CreateContext(IGlContext share)
         {
             var shareCtx = (EglContext)share;
             var ctx = _egl.CreateContext(_display, _config, shareCtx?.Context ?? IntPtr.Zero, _contextAttributes);
             if (ctx == IntPtr.Zero)
-                throw new OpenGlException("eglCreateContext failed");
+                throw OpenGlException.GetFormattedException("eglCreateContext", _egl);
             var surf = _egl.CreatePBufferSurface(_display, _config, new[]
             {
                 EGL_WIDTH, 1,
@@ -121,7 +139,7 @@ namespace Avalonia.OpenGL
                 EGL_NONE
             });
             if (surf == IntPtr.Zero)
-                throw new OpenGlException("eglCreatePbufferSurface failed");
+                throw OpenGlException.GetFormattedException("eglCreatePBufferSurface", _egl);
             var rv = new EglContext(this, _egl, ctx, surf);
             rv.MakeCurrent(null);
             return rv;
@@ -130,14 +148,14 @@ namespace Avalonia.OpenGL
         public void ClearContext()
         {
             if (!_egl.MakeCurrent(_display, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero))
-                throw new OpenGlException("eglMakeCurrent failed");
+                throw OpenGlException.GetFormattedException("eglMakeCurrent", _egl);
         }
 
         public EglSurface CreateWindowSurface(IntPtr window)
         {
             var s = _egl.CreateWindowSurface(_display, _config, window, new[] {EGL_NONE, EGL_NONE});
             if (s == IntPtr.Zero)
-                throw new OpenGlException("eglCreateWindowSurface failed");
+                throw OpenGlException.GetFormattedException("eglCreateWindowSurface", _egl);
             return new EglSurface(this, _egl, s);
         }
 

@@ -3,9 +3,11 @@
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="FontSize" Value="{DynamicResource FontSizeLarge}"/>
         <Setter Property="Foreground" Value="{DynamicResource ThemeForegroundLightBrush}"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="Padding" Value="8"/>
         <Setter Property="Template">
             <ControlTemplate>
-                <ContentPresenter 
+                <ContentPresenter
                     Name="PART_ContentPresenter"
                     Background="{TemplateBinding Background}"
                     BorderBrush="{TemplateBinding BorderBrush}"
@@ -14,6 +16,7 @@
                     Content="{TemplateBinding Header}"
                     HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
                     VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                    Margin="{TemplateBinding Margin}"
                     Padding="{TemplateBinding Padding}"/>
             </ControlTemplate>
         </Setter>
@@ -21,19 +24,22 @@
     <Style Selector="TabItem:disabled">
         <Setter Property="Opacity" Value="{DynamicResource ThemeDisabledOpacity}"/>
     </Style>
-    <Style Selector="TabItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Style Selector="TabItem:pointerover">
         <Setter Property="Background" Value="{DynamicResource ThemeControlHighlightMidBrush}"/>
     </Style>
-    <Style Selector="TabItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Style Selector="TabItem:selected">
         <Setter Property="Background" Value="{DynamicResource ThemeAccentBrush4}"/>
     </Style>
-    <Style Selector="TabItem:selected:focus /template/ ContentPresenter#PART_ContentPresenter">
+    <Style Selector="TabItem:selected:focus">
         <Setter Property="Background" Value="{DynamicResource ThemeAccentBrush3}"/>
     </Style>
-    <Style Selector="TabItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Style Selector="TabItem:selected:pointerover">
         <Setter Property="Background" Value="{DynamicResource ThemeAccentBrush3}"/>
     </Style>
-    <Style Selector="TabItem:selected:focus:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Style Selector="TabItem:selected:focus:pointerover">
         <Setter Property="Background" Value="{DynamicResource ThemeAccentBrush2}"/>
+    </Style>
+    <Style Selector="TabItem[TabStripPlacement=Right]">
+        <Setter Property="HorizontalContentAlignment" Value="Right"/>
     </Style>
 </Styles>

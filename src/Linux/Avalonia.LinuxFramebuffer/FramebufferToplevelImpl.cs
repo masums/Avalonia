@@ -18,7 +18,7 @@ namespace Avalonia.LinuxFramebuffer
         {
             _fb = fb;
             Invalidate(default(Rect));
-            var mice = new Mice(ClientSize.Width, ClientSize.Height);
+            var mice = new Mice(this, ClientSize.Width, ClientSize.Height);
             mice.Start();
             mice.Event += e => Input?.Invoke(e);
         }
@@ -51,9 +51,9 @@ namespace Avalonia.LinuxFramebuffer
             InputRoot = inputRoot;
         }
 
-        public Point PointToClient(Point point) => point;
+        public Point PointToClient(PixelPoint p) => p.ToPoint(1);
 
-        public Point PointToScreen(Point point) => point;
+        public PixelPoint PointToScreen(Point p) => PixelPoint.FromPoint(p, 1);
 
         public void SetCursor(IPlatformHandle cursor)
         {

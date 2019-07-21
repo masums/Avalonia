@@ -574,6 +574,7 @@ namespace Avalonia.Win32.Interop
             WM_AFXLAST = 0x037F,
             WM_PENWINFIRST = 0x0380,
             WM_PENWINLAST = 0x038F,
+            WM_TOUCH = 0x0240,
             WM_APP = 0x8000,
             WM_USER = 0x0400,
 
@@ -605,6 +606,14 @@ namespace Avalonia.Win32.Interop
             GWL_STYLE = -16,
             GWL_EXSTYLE = -20,
             GWL_USERDATA = -21
+        }
+
+        public enum MenuCharParam
+        {
+            MNC_IGNORE = 0,
+            MNC_CLOSE = 1,
+            MNC_EXECUTE = 2,
+            MNC_SELECT = 3
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -836,10 +845,16 @@ namespace Avalonia.Win32.Interop
 
         [DllImport("user32.dll")]
         public static extern bool PeekMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
+
+        [DllImport("user32")]
+        public static extern IntPtr GetMessageExtraInfo();
         
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "RegisterClassExW")]
         public static extern ushort RegisterClassEx(ref WNDCLASSEX lpwcx);
 
+        [DllImport("user32.dll")]
+        public static extern void RegisterTouchWindow(IntPtr hWnd, int flags);
+        
         [DllImport("user32.dll")]
         public static extern bool ReleaseCapture();
 
@@ -909,8 +924,17 @@ namespace Avalonia.Win32.Interop
 
         public enum ClassLongIndex : int
         {
-            GCL_HCURSOR = -12,
-            GCL_HICON = -14
+            GCLP_MENUNAME = -8,
+            GCLP_HBRBACKGROUND = -10,
+            GCLP_HCURSOR = -12,
+            GCLP_HICON = -14,
+            GCLP_HMODULE = -16,
+            GCL_CBWNDEXTRA = -18,
+            GCL_CBCLSEXTRA = -20,
+            GCLP_WNDPROC = -24,
+            GCL_STYLE = -26,
+            GCLP_HICONSM = -34,
+            GCW_ATOM = -32
         }
 
         [DllImport("user32.dll", EntryPoint = "SetClassLongPtr")]
@@ -928,6 +952,20 @@ namespace Avalonia.Win32.Interop
 
             return SetClassLong64(hWnd, nIndex, dwNewLong);
         }
+
+        public static IntPtr GetClassLongPtr(IntPtr hWnd, int nIndex)
+        {
+            if (IntPtr.Size > 4)
+                return GetClassLongPtr64(hWnd, nIndex);
+            else
+                return new IntPtr(GetClassLongPtr32(hWnd, nIndex));
+        }
+
+        [DllImport("user32.dll", EntryPoint = "GetClassLong")]
+        public static extern uint GetClassLongPtr32(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", EntryPoint = "GetClassLongPtr")]
+        public static extern IntPtr GetClassLongPtr64(IntPtr hWnd, int nIndex);
 
         [DllImport("user32.dll", EntryPoint = "SetCursor")]
         internal static extern IntPtr SetCursor(IntPtr hCursor);
@@ -1012,6 +1050,17 @@ namespace Avalonia.Win32.Interop
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool GetMonitorInfo([In] IntPtr hMonitor, ref MONITORINFO lpmi);
 
+        [DllImport("user32")]
+        public static extern bool GetTouchInputInfo(
+            IntPtr hTouchInput,
+            uint        cInputs,
+            [Out]TOUCHINPUT[] pInputs,
+            int         cbSize
+        );
+        
+        [DllImport("user32")]
+        public static extern bool CloseTouchInputHandle(IntPtr hTouchInput);
+        
         [return: MarshalAs(UnmanagedType.Bool)]
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "PostMessageW")]
         public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
@@ -1172,6 +1221,8 @@ namespace Avalonia.Win32.Interop
             public int right;
             public int bottom;
 
+            public int Width => right - left;
+            public int Height => bottom - top;
             public RECT(Rect rect)
             {
                 left = (int)rect.X;
@@ -1179,6 +1230,34 @@ namespace Avalonia.Win32.Interop
                 right = (int)(rect.X + rect.Width);
                 bottom = (int)(rect.Y + rect.Height);
             }
+
+            public void Offset(POINT pt)
+            {
+                left += pt.X;
+                right += pt.X;
+                top += pt.Y;
+                bottom += pt.Y;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct WINDOWPOS
+        {
+            public IntPtr hwnd;
+            public IntPtr hwndInsertAfter;
+            public int x;
+            public int y;
+            public int cx;
+            public int cy;
+            public uint flags;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct NCCALCSIZE_PARAMS
+        {
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
+            public RECT[] rgrc;
+            public WINDOWPOS lppos;
         }
 
         public struct TRACKMOUSEEVENT
@@ -1254,6 +1333,60 @@ namespace Avalonia.Win32.Interop
             public string lpszMenuName;
             public string lpszClassName;
             public IntPtr hIconSm;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct TOUCHINPUT
+        {
+            public int X;
+            public int Y;
+            public IntPtr Source;
+            public uint Id;
+            public TouchInputFlags Flags;
+            public int Mask;
+            public uint Time;
+            public IntPtr ExtraInfo;
+            public int CxContact;
+            public int CyContact;
+        }
+
+        [Flags]
+        public enum TouchInputFlags
+        {
+            /// <summary>
+            /// Movement has occurred. Cannot be combined with TOUCHEVENTF_DOWN.
+            /// </summary>
+            TOUCHEVENTF_MOVE = 0x0001,
+
+            /// <summary>
+            /// The corresponding touch point was established through a new contact. Cannot be combined with TOUCHEVENTF_MOVE or TOUCHEVENTF_UP.
+            /// </summary>
+            TOUCHEVENTF_DOWN = 0x0002,
+
+            /// <summary>
+            /// A touch point was removed.
+            /// </summary>
+            TOUCHEVENTF_UP = 0x0004,
+
+            /// <summary>
+            /// A touch point is in range. This flag is used to enable touch hover support on compatible hardware. Applications that do not want support for hover can ignore this flag.
+            /// </summary>
+            TOUCHEVENTF_INRANGE = 0x0008,
+
+            /// <summary>
+            /// Indicates that this TOUCHINPUT structure corresponds to a primary contact point. See the following text for more information on primary touch points.
+            /// </summary>
+            TOUCHEVENTF_PRIMARY = 0x0010,
+
+            /// <summary>
+            /// When received using GetTouchInputInfo, this input was not coalesced.
+            /// </summary>
+            TOUCHEVENTF_NOCOALESCE = 0x0020,
+
+            /// <summary>
+            /// The touch event came from the user's palm.
+            /// </summary>
+            TOUCHEVENTF_PALM = 0x0080
         }
 
         [Flags]

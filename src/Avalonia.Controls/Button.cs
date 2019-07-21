@@ -7,6 +7,7 @@ using System.Windows.Input;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Avalonia.VisualTree;
 
 namespace Avalonia.Controls
@@ -69,10 +70,11 @@ namespace Avalonia.Controls
         public static readonly RoutedEvent<RoutedEventArgs> ClickEvent =
             RoutedEvent.Register<Button, RoutedEventArgs>(nameof(Click), RoutingStrategies.Bubble);
 
-        private ICommand _command;
-
         public static readonly StyledProperty<bool> IsPressedProperty =
             AvaloniaProperty.Register<Button, bool>(nameof(IsPressed));
+
+        private ICommand _command;
+        private bool _commandCanExecute = true;
 
         /// <summary>
         /// Initializes static members of the <see cref="Button"/> class.
@@ -146,6 +148,8 @@ namespace Avalonia.Controls
             private set { SetValue(IsPressedProperty, value); }
         }
 
+        protected override bool IsEnabledCore => base.IsEnabledCore && _commandCanExecute; 
+
         /// <inheritdoc/>
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
@@ -157,6 +161,40 @@ namespace Avalonia.Controls
                 {
                     ListenForDefault(inputElement);
                 }
+            }
+        }
+
+        /// <inheritdoc/>
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnDetachedFromVisualTree(e);
+
+            if (IsDefault)
+            {
+                if (e.Root is IInputElement inputElement)
+                {
+                    StopListeningForDefault(inputElement);
+                }
+            }
+        }
+
+        protected override void OnAttachedToLogicalTree(LogicalTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToLogicalTree(e);
+
+            if (Command != null)
+            {
+                Command.CanExecuteChanged += CanExecuteChanged;
+            }
+        }
+
+        protected override void OnDetachedFromLogicalTree(LogicalTreeAttachmentEventArgs e)
+        {
+            base.OnDetachedFromLogicalTree(e);
+
+            if (Command != null)
+            {
+                Command.CanExecuteChanged -= CanExecuteChanged;
             }
         }
 
@@ -195,20 +233,6 @@ namespace Avalonia.Controls
             }
         }
 
-        /// <inheritdoc/>
-        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
-        {
-            base.OnDetachedFromVisualTree(e);
-
-            if (IsDefault)
-            {
-                if (e.Root is IInputElement inputElement)
-                {
-                    StopListeningForDefault(inputElement);
-                }
-            }
-        }
-
         /// <summary>
         /// Invokes the <see cref="Click"/> event.
         /// </summary>
@@ -217,7 +241,7 @@ namespace Avalonia.Controls
             var e = new RoutedEventArgs(ClickEvent);
             RaiseEvent(e);
 
-            if (Command != null)
+            if (!e.Handled && Command?.CanExecute(CommandParameter) == true)
             {
                 Command.Execute(CommandParameter);
                 e.Handled = true;
@@ -231,7 +255,6 @@ namespace Avalonia.Controls
 
             if (e.MouseButton == MouseButton.Left)
             {
-                e.Device.Capture(this);
                 IsPressed = true;
                 e.Handled = true;
 
@@ -249,18 +272,20 @@ namespace Avalonia.Controls
 
             if (IsPressed && e.MouseButton == MouseButton.Left)
             {
-                e.Device.Capture(null);
                 IsPressed = false;
                 e.Handled = true;
 
-                var hittest = this.GetVisualsAt(e.GetPosition(this));
-
                 if (ClickMode == ClickMode.Release &&
-                    hittest.Any(c => c == this || (c as IStyledElement)?.TemplatedParent == this))
+                    this.GetVisualsAt(e.GetPosition(this)).Any(c => this == c || this.IsVisualAncestorOf(c)))
                 {
                     OnClick();
                 }
             }
+        }
+
+        protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+        {
+            IsPressed = false;
         }
 
         protected override void UpdateDataValidation(AvaloniaProperty property, BindingNotification status)
@@ -270,7 +295,11 @@ namespace Avalonia.Controls
             {
                 if (status?.ErrorType == BindingErrorType.Error)
                 {
-                    IsEnabled = false;
+                    if (_commandCanExecute)
+                    {
+                        _commandCanExecute = false;
+                        UpdateIsEffectivelyEnabled();
+                    }
                 }
             }
         }
@@ -283,17 +312,17 @@ namespace Avalonia.Controls
         {
             if (e.Sender is Button button)
             {
-                var oldCommand = e.OldValue as ICommand;
-                var newCommand = e.NewValue as ICommand;
-
-                if (oldCommand != null)
+                if (((ILogical)button).IsAttachedToLogicalTree)
                 {
-                    oldCommand.CanExecuteChanged -= button.CanExecuteChanged;
-                }
+                    if (e.OldValue is ICommand oldCommand)
+                    {
+                        oldCommand.CanExecuteChanged -= button.CanExecuteChanged;
+                    }
 
-                if (newCommand != null)
-                {
-                    newCommand.CanExecuteChanged += button.CanExecuteChanged;
+                    if (e.NewValue is ICommand newCommand)
+                    {
+                        newCommand.CanExecuteChanged += button.CanExecuteChanged;
+                    }
                 }
 
                 button.CanExecuteChanged(button, EventArgs.Empty);
@@ -329,9 +358,13 @@ namespace Avalonia.Controls
         /// <param name="e">The event args.</param>
         private void CanExecuteChanged(object sender, EventArgs e)
         {
-            // HACK: Just set the IsEnabled property for the moment. This needs to be changed to
-            // use IsEnabledCore etc. but it will do for now.
-            IsEnabled = Command == null || Command.CanExecute(CommandParameter);
+            var canExecute = Command == null || Command.CanExecute(CommandParameter);
+
+            if (canExecute != _commandCanExecute)
+            {
+                _commandCanExecute = canExecute;
+                UpdateIsEffectivelyEnabled();
+            }
         }
 
         /// <summary>

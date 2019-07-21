@@ -257,13 +257,14 @@ namespace Avalonia.Controls.Primitives
                 {
                     Logger.Verbose(LogArea.Control, this, "Creating control template");
 
-                    var child = template.Build(this);
-                    var nameScope = new NameScope();
-                    NameScope.SetNameScope((Control)child, nameScope);
-                    child.SetValue(TemplatedParentProperty, this);
-                    RegisterNames(child, nameScope);
+                    var (child, nameScope) = template.Build(this);
+                    ApplyTemplatedParent(child);
                     ((ISetLogicalParent)child).SetParent(this);
                     VisualChildren.Add(child);
+                    
+                    // Existing code kinda expect to see a NameScope even if it's empty
+                    if (nameScope == null)
+                        nameScope = new NameScope();
 
                     OnTemplateApplied(new TemplateAppliedEventArgs(nameScope));
                 }
@@ -327,22 +328,18 @@ namespace Avalonia.Controls.Primitives
         }
 
         /// <summary>
-        /// Registers each control with its name scope.
+        /// Sets the TemplatedParent property for the created template children.
         /// </summary>
         /// <param name="control">The control.</param>
-        /// <param name="nameScope">The name scope.</param>
-        private void RegisterNames(IControl control, INameScope nameScope)
+        private void ApplyTemplatedParent(IControl control)
         {
-            if (control.Name != null)
-            {
-                nameScope.Register(control.Name, control);
-            }
+            control.SetValue(TemplatedParentProperty, this);
 
-            if (control.TemplatedParent == this)
+            foreach (var child in control.LogicalChildren)
             {
-                foreach (IControl child in control.GetVisualChildren())
+                if (child is IControl c)
                 {
-                    RegisterNames(child, nameScope);
+                    ApplyTemplatedParent(c);
                 }
             }
         }

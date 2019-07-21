@@ -20,10 +20,19 @@ namespace Avalonia.Controls.Shapes
             AvaloniaProperty.Register<Shape, IBrush>(nameof(Stroke));
 
         public static readonly StyledProperty<AvaloniaList<double>> StrokeDashArrayProperty =
-            AvaloniaProperty.Register<Shape, AvaloniaList<double>>("StrokeDashArray");
+            AvaloniaProperty.Register<Shape, AvaloniaList<double>>(nameof(StrokeDashArray));
+
+        public static readonly StyledProperty<double> StrokeDashOffsetProperty =
+            AvaloniaProperty.Register<Shape, double>(nameof(StrokeDashOffset));
 
         public static readonly StyledProperty<double> StrokeThicknessProperty =
             AvaloniaProperty.Register<Shape, double>(nameof(StrokeThickness));
+
+        public static readonly StyledProperty<PenLineCap> StrokeLineCapProperty =
+            AvaloniaProperty.Register<Shape, PenLineCap>(nameof(StrokeLineCap), PenLineCap.Flat);
+
+        public static readonly StyledProperty<PenLineJoin> StrokeJoinProperty =
+            AvaloniaProperty.Register<Shape, PenLineJoin>(nameof(StrokeJoin), PenLineJoin.Miter);
 
         private Matrix _transform = Matrix.Identity;
         private Geometry _definingGeometry;
@@ -33,7 +42,9 @@ namespace Avalonia.Controls.Shapes
         static Shape()
         {
             AffectsMeasure<Shape>(StretchProperty, StrokeThicknessProperty);
-            AffectsRender<Shape>(FillProperty, StrokeProperty, StrokeDashArrayProperty);
+
+            AffectsRender<Shape>(FillProperty, StrokeProperty, StrokeDashArrayProperty, StrokeDashOffsetProperty,
+                StrokeThicknessProperty, StrokeLineCapProperty, StrokeJoinProperty);
         }
 
         public Geometry DefiningGeometry
@@ -104,19 +115,29 @@ namespace Avalonia.Controls.Shapes
             set { SetValue(StrokeDashArrayProperty, value); }
         }
 
+        public double StrokeDashOffset
+        {
+            get { return GetValue(StrokeDashOffsetProperty); }
+            set { SetValue(StrokeDashOffsetProperty, value); }
+        }
+
         public double StrokeThickness
         {
             get { return GetValue(StrokeThicknessProperty); }
             set { SetValue(StrokeThicknessProperty, value); }
         }
 
-        public PenLineCap StrokeDashCap { get; set; } = PenLineCap.Flat;
+        public PenLineCap StrokeLineCap
+        {
+            get { return GetValue(StrokeLineCapProperty); }
+            set { SetValue(StrokeLineCapProperty, value); }
+        }
 
-        public PenLineCap StrokeStartLineCap { get; set; } = PenLineCap.Flat;
-
-        public PenLineCap StrokeEndLineCap { get; set; } = PenLineCap.Flat;
-
-        public PenLineJoin StrokeJoin { get; set; } = PenLineJoin.Miter;
+        public PenLineJoin StrokeJoin
+        {
+            get { return GetValue(StrokeJoinProperty); }
+            set { SetValue(StrokeJoinProperty, value); }
+        }
 
         public override void Render(DrawingContext context)
         {
@@ -124,8 +145,8 @@ namespace Avalonia.Controls.Shapes
 
             if (geometry != null)
             {
-                var pen = new Pen(Stroke, StrokeThickness, new DashStyle(StrokeDashArray), 
-                    StrokeDashCap, StrokeStartLineCap, StrokeEndLineCap, StrokeJoin);
+                var pen = new Pen(Stroke, StrokeThickness, new DashStyle(StrokeDashArray, StrokeDashOffset),
+                     StrokeLineCap, StrokeJoin);
                 context.DrawGeometry(Fill, pen, geometry);
             }
         }
@@ -160,11 +181,11 @@ namespace Avalonia.Controls.Shapes
 
         protected void InvalidateGeometry()
         {
-            this._renderedGeometry = null;
-            this._definingGeometry = null;
+            _renderedGeometry = null;
+            _definingGeometry = null;
             InvalidateMeasure();
         }
-        
+
         protected override Size MeasureOverride(Size availableSize)
         {
             bool deferCalculateTransform;
@@ -186,7 +207,7 @@ namespace Avalonia.Controls.Shapes
             if (deferCalculateTransform)
             {
                 _calculateTransformOnArrange = true;
-                return DefiningGeometry.Bounds.Size;
+                return DefiningGeometry?.Bounds.Size ?? Size.Empty;
             }
             else
             {
@@ -194,10 +215,10 @@ namespace Avalonia.Controls.Shapes
                 return CalculateShapeSizeAndSetTransform(availableSize);
             }
         }
-        
+
         protected override Size ArrangeOverride(Size finalSize)
         {
-            if(_calculateTransformOnArrange)
+            if (_calculateTransformOnArrange)
             {
                 _calculateTransformOnArrange = false;
                 CalculateShapeSizeAndSetTransform(finalSize);
@@ -208,17 +229,22 @@ namespace Avalonia.Controls.Shapes
 
         private Size CalculateShapeSizeAndSetTransform(Size availableSize)
         {
-            // This should probably use GetRenderBounds(strokeThickness) but then the calculations
-            // will multiply the stroke thickness as well, which isn't correct.
-            var (size, transform) = CalculateSizeAndTransform(availableSize, DefiningGeometry.Bounds, Stretch);
-
-            if (_transform != transform)
+            if (DefiningGeometry != null)
             {
-                _transform = transform;
-                _renderedGeometry = null;
+                // This should probably use GetRenderBounds(strokeThickness) but then the calculations
+                // will multiply the stroke thickness as well, which isn't correct.
+                var (size, transform) = CalculateSizeAndTransform(availableSize, DefiningGeometry.Bounds, Stretch);
+
+                if (_transform != transform)
+                {
+                    _transform = transform;
+                    _renderedGeometry = null;
+                }
+
+                return size;
             }
 
-            return size;
+            return Size.Empty;
         }
 
         internal static (Size, Matrix) CalculateSizeAndTransform(Size availableSize, Rect shapeBounds, Stretch Stretch)
@@ -298,25 +324,25 @@ namespace Avalonia.Controls.Shapes
 
         private static void AffectsGeometryInvalidate(AvaloniaPropertyChangedEventArgs e)
         {
-            var control = e.Sender as Shape;
-
-            if (control != null)
+            if (!(e.Sender is Shape control))
             {
-                // If the geometry is invalidated when Bounds changes, only invalidate when the Size
-                // portion changes.
-                if (e.Property == BoundsProperty)
-                {
-                    var oldBounds = (Rect)e.OldValue;
-                    var newBounds = (Rect)e.NewValue;
-
-                    if (oldBounds.Size == newBounds.Size)
-                    {
-                        return;
-                    }
-                }
-
-                control.InvalidateGeometry();
+                return;
             }
+
+            // If the geometry is invalidated when Bounds changes, only invalidate when the Size
+            // portion changes.
+            if (e.Property == BoundsProperty)
+            {
+                var oldBounds = (Rect)e.OldValue;
+                var newBounds = (Rect)e.NewValue;
+
+                if (oldBounds.Size == newBounds.Size)
+                {
+                    return;
+                }
+            }
+
+            control.InvalidateGeometry();
         }
     }
 }

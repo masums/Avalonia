@@ -26,14 +26,21 @@ namespace Avalonia
     public static class Win32ApplicationExtensions
     {
         public static T UseWin32<T>(
-            this T builder,
-            bool deferredRendering = true, bool allowEgl = false) 
+            this T builder) 
                 where T : AppBuilderBase<T>, new()
         {
             return builder.UseWindowingSubsystem(
-                () => Win32.Win32Platform.Initialize(deferredRendering, allowEgl),
+                () => Win32.Win32Platform.Initialize(
+                    AvaloniaLocator.Current.GetService<Win32PlatformOptions>() ?? new Win32PlatformOptions()),
                 "Win32");
         }
+    }
+
+    public class Win32PlatformOptions
+    {
+        public bool UseDeferredRendering { get; set; } = true;
+        public bool AllowEglInitialization { get; set; }
+        public bool? EnableMultitouch { get; set; }
     }
 }
 
@@ -53,7 +60,8 @@ namespace Avalonia.Win32
             CreateMessageWindow();
         }
 
-        public static bool UseDeferredRendering { get; set; }
+        public static bool UseDeferredRendering => Options.UseDeferredRendering;
+        public static Win32PlatformOptions Options { get; private set; }
 
         public Size DoubleClickSize => new Size(
             UnmanagedMethods.GetSystemMetrics(UnmanagedMethods.SystemMetric.SM_CXDOUBLECLK),
@@ -63,11 +71,12 @@ namespace Avalonia.Win32
 
         public static void Initialize()
         {
-            Initialize(true);
+            Initialize(new Win32PlatformOptions());
         }
 
-        public static void Initialize(bool deferredRendering = true, bool allowEgl = false)
+        public static void Initialize(Win32PlatformOptions options)
         {
+            Options = options;
             AvaloniaLocator.CurrentMutable
                 .Bind<IClipboard>().ToSingleton<ClipboardImpl>()
                 .Bind<IStandardCursorFactory>().ToConstant(CursorFactory.Instance)
@@ -80,9 +89,9 @@ namespace Avalonia.Win32
                 .Bind<IWindowingPlatform>().ToConstant(s_instance)
                 .Bind<PlatformHotkeyConfiguration>().ToSingleton<PlatformHotkeyConfiguration>()
                 .Bind<IPlatformIconLoader>().ToConstant(s_instance);
-            if (allowEgl)
+            if (options.AllowEglInitialization)
                 Win32GlManager.Initialize();
-            UseDeferredRendering = deferredRendering;
+            
             _uiThread = Thread.CurrentThread;
 
             if (OleContext.Current != null)

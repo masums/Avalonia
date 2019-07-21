@@ -20,6 +20,8 @@ namespace Avalonia.Controls.Presenters
     /// </summary>
     internal class ItemVirtualizerSimple : ItemVirtualizer
     {
+        private int _anchor;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="ItemVirtualizerSimple"/> class.
         /// </summary>
@@ -312,7 +314,6 @@ namespace Avalonia.Controls.Presenters
 
             if (!panel.IsFull && Items != null && panel.IsAttachedToVisualTree)
             {
-                var memberSelector = Owner.MemberSelector;
                 var index = NextIndex;
                 var step = 1;
 
@@ -335,7 +336,7 @@ namespace Avalonia.Controls.Presenters
                         }
                     }
 
-                    var materialized = generator.Materialize(index, Items.ElementAt(index), memberSelector);
+                    var materialized = generator.Materialize(index, Items.ElementAt(index));
 
                     if (step == 1)
                     {
@@ -362,7 +363,10 @@ namespace Avalonia.Controls.Presenters
 
             if (panel.OverflowCount > 0)
             {
-                RemoveContainers(panel.OverflowCount);
+                if (_anchor <= FirstIndex)
+                {
+                    RemoveContainers(panel.OverflowCount);
+                }
             }
         }
 
@@ -378,7 +382,6 @@ namespace Avalonia.Controls.Presenters
         {
             var panel = VirtualizingPanel;
             var generator = Owner.ItemContainerGenerator;
-            var selector = Owner.MemberSelector;
             var containers = generator.Containers.ToList();
             var itemIndex = FirstIndex;
 
@@ -388,7 +391,7 @@ namespace Avalonia.Controls.Presenters
 
                 if (!object.Equals(container.Item, item))
                 {
-                    if (!generator.TryRecycle(itemIndex, itemIndex, item, selector))
+                    if (!generator.TryRecycle(itemIndex, itemIndex, item))
                     {
                         throw new NotImplementedException();
                     }
@@ -415,7 +418,6 @@ namespace Avalonia.Controls.Presenters
         {
             var panel = VirtualizingPanel;
             var generator = Owner.ItemContainerGenerator;
-            var selector = Owner.MemberSelector;
 
             //validate delta it should never overflow last index or generate index < 0 
             delta = MathUtilities.Clamp(delta, -FirstIndex, ItemCount - FirstIndex - panel.Children.Count);
@@ -432,7 +434,7 @@ namespace Avalonia.Controls.Presenters
 
                 var item = Items.ElementAt(newItemIndex);
 
-                if (!generator.TryRecycle(oldItemIndex, newItemIndex, item, selector))
+                if (!generator.TryRecycle(oldItemIndex, newItemIndex, item))
                 {
                     throw new NotImplementedException();
                 }
@@ -517,17 +519,13 @@ namespace Avalonia.Controls.Presenters
 
             if (index >= 0 && index < ItemCount)
             {
-                if (index < FirstIndex)
+                if (index <= FirstIndex)
                 {
                     newOffset = index;
                 }
                 else if (index >= NextIndex)
                 {
                     newOffset = index - Math.Ceiling(ViewportValue - 1);
-                }
-                else if (OffsetValue + ViewportValue >= ItemCount)
-                {
-                    newOffset = OffsetValue - 1;
                 }
 
                 if (newOffset != -1)
@@ -544,7 +542,14 @@ namespace Avalonia.Controls.Presenters
                 // it means we're running a unit test.
                 if (container != null && layoutManager != null)
                 {
+                    _anchor = index;
                     layoutManager.ExecuteLayoutPass();
+                    _anchor = -1;
+
+                    if (newOffset != -1 && newOffset != OffsetValue)
+                    {
+                        OffsetValue = newOffset;
+                    }
 
                     if (panel.ScrollDirection == Orientation.Vertical)
                     {

@@ -4,6 +4,7 @@
 using System;
 using System.Reflection;
 using System.Linq;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform;
 
 namespace Avalonia.Controls
@@ -15,6 +16,7 @@ namespace Avalonia.Controls
     public abstract class AppBuilderBase<TAppBuilder> where TAppBuilder : AppBuilderBase<TAppBuilder>, new()
     {
         private static bool s_setupWasAlreadyCalled;
+        private Action _optionsInitializers;
 
         /// <summary>
         /// Gets or sets the <see cref="IRuntimePlatform"/> instance.
@@ -56,10 +58,6 @@ namespace Avalonia.Controls
         /// </summary>
         public Action<TAppBuilder> AfterSetupCallback { get; private set; } = builder => { };
 
-        /// <summary>
-        /// Gets or sets a method to call before Start is called on the <see cref="Application"/>.
-        /// </summary>
-        public Action<TAppBuilder> BeforeStartCallback { get; private set; } = builder => { };
 
         protected AppBuilderBase(IRuntimePlatform platform, Action<TAppBuilder> platformServices)
         {
@@ -94,17 +92,6 @@ namespace Avalonia.Controls
 
         protected TAppBuilder Self => (TAppBuilder)this;
 
-        /// <summary>
-        /// Registers a callback to call before Start is called on the <see cref="Application"/>.
-        /// </summary>
-        /// <param name="callback">The callback.</param>
-        /// <returns>An <typeparamref name="TAppBuilder"/> instance.</returns>
-        public TAppBuilder BeforeStarting(Action<TAppBuilder> callback)
-        {
-            BeforeStartCallback = (Action<TAppBuilder>)Delegate.Combine(BeforeStartCallback, callback);
-            return Self;
-        }
-
         public TAppBuilder AfterSetup(Action<TAppBuilder> callback)
         {
             AfterSetupCallback = (Action<TAppBuilder>)Delegate.Combine(AfterSetupCallback, callback);
@@ -116,33 +103,38 @@ namespace Avalonia.Controls
         /// </summary>
         /// <typeparam name="TMainWindow">The window type.</typeparam>
         /// <param name="dataContextProvider">A delegate that will be called to create a data context for the window (optional).</param>
+        [Obsolete("Use either lifetimes or AppMain overload. See see https://github.com/AvaloniaUI/Avalonia/wiki/Application-lifetimes for details")]
         public void Start<TMainWindow>(Func<object> dataContextProvider = null)
             where TMainWindow : Window, new()
         {
-            Setup();
-            BeforeStartCallback(Self);
-
-            var window = new TMainWindow();
-            if (dataContextProvider != null)
-                window.DataContext = dataContextProvider();
-            Instance.Run(window);
+            AfterSetup(builder =>
+            {
+                var window = new TMainWindow();
+                if (dataContextProvider != null)
+                    window.DataContext = dataContextProvider();
+                ((IClassicDesktopStyleApplicationLifetime)builder.Instance.ApplicationLifetime)
+                    .MainWindow = window;
+            });
+            
+            // Copy-pasted because we can't call extension methods due to generic constraints
+            var lifetime = new ClassicDesktopStyleApplicationLifetime(Instance) {ShutdownMode = ShutdownMode.OnMainWindowClose};
+            Instance.ApplicationLifetime = lifetime;
+            SetupWithoutStarting();
+            lifetime.Start(Array.Empty<string>());
         }
 
-        /// <summary>
-        /// Starts the application with the provided instance of <typeparamref name="TMainWindow"/>.
-        /// </summary>
-        /// <typeparam name="TMainWindow">The window type.</typeparam>
-        /// <param name="mainWindow">Instance of type TMainWindow to use when starting the app</param>
-        /// <param name="dataContextProvider">A delegate that will be called to create a data context for the window (optional).</param>
-        public void Start<TMainWindow>(TMainWindow mainWindow, Func<object> dataContextProvider = null)
-            where TMainWindow : Window
+        public delegate void AppMainDelegate(Application app, string[] args);
+
+        [Obsolete("Use either lifetimes or AppMain overload. See see https://github.com/AvaloniaUI/Avalonia/wiki/Application-lifetimes for details", true)]
+        public void Start()
+        {
+            throw new NotSupportedException();
+        }
+
+        public void Start(AppMainDelegate main, string[] args)
         {
             Setup();
-            BeforeStartCallback(Self);
-
-            if (dataContextProvider != null)
-                mainWindow.DataContext = dataContextProvider();
-            Instance.Run(mainWindow);
+            main(Instance, args);
         }
 
         /// <summary>
@@ -201,22 +193,11 @@ namespace Avalonia.Controls
             var platformClassName = assemblyName.Replace("Avalonia.", string.Empty) + "Platform";
             var platformClassFullName = assemblyName + "." + platformClassName;
             var platformClass = assembly.GetType(platformClassFullName);
-            var init = platformClass.GetRuntimeMethod("Initialize", new Type[0]);
+            var init = platformClass.GetRuntimeMethod("Initialize", Type.EmptyTypes);
             init.Invoke(null, null);
         };
 
         public TAppBuilder UseAvaloniaModules() => AfterSetup(builder => SetupAvaloniaModules());
-
-        /// <summary>
-        /// Sets the shutdown mode of the application.
-        /// </summary>
-        /// <param name="exitMode">The shutdown mode.</param>
-        /// <returns></returns>
-        public TAppBuilder SetExitMode(ExitMode exitMode)
-        {
-            Instance.ExitMode = exitMode;
-            return Self;
-        }      
 
         protected virtual bool CheckSetup => true;
 
@@ -236,10 +217,28 @@ namespace Avalonia.Controls
                                      select (from constructor in moduleType.GetTypeInfo().DeclaredConstructors
                                              where constructor.GetParameters().Length == 0 && !constructor.IsStatic
                                              select constructor).Single() into constructor
-                                     select (Action)(() => constructor.Invoke(new object[0]));
+                                     select (Action)(() => constructor.Invoke(Array.Empty<object>()));
             Delegate.Combine(moduleInitializers.ToArray()).DynamicInvoke();
         }
 
+        /// <summary>
+        /// Configures platform-specific options
+        /// </summary>
+        public TAppBuilder With<T>(T options)
+        {
+            _optionsInitializers += () => { AvaloniaLocator.CurrentMutable.Bind<T>().ToConstant(options); };
+            return Self;
+        }
+        
+        /// <summary>
+        /// Configures platform-specific options
+        /// </summary>
+        public TAppBuilder With<T>(Func<T> options)
+        {
+            _optionsInitializers += () => { AvaloniaLocator.CurrentMutable.Bind<T>().ToFunc(options); };
+            return Self;
+        }
+        
         /// <summary>
         /// Sets up the platform-speciic services for the <see cref="Application"/>.
         /// </summary>
@@ -271,13 +270,14 @@ namespace Avalonia.Controls
             }
 
             s_setupWasAlreadyCalled = true;
-
+            _optionsInitializers?.Invoke();
             RuntimePlatformServicesInitializer();
             WindowingSubsystemInitializer();
             RenderingSubsystemInitializer();
             Instance.RegisterServices();
             Instance.Initialize();
             AfterSetupCallback(Self);
+            Instance.OnFrameworkInitializationCompleted();
         }
     }
 }

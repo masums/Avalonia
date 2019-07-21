@@ -39,27 +39,32 @@ namespace Avalonia.Controls.Remote.Server
             KeyboardDevice = AvaloniaLocator.Current.GetService<IKeyboardDevice>();
         }
 
-        private static RawMouseEventType GetAvaloniaEventType (Avalonia.Remote.Protocol.Input.MouseButton button, bool pressed)
+        private static RawPointerEventType GetAvaloniaEventType (Avalonia.Remote.Protocol.Input.MouseButton button, bool pressed)
         {
             switch (button)
             {
                 case Avalonia.Remote.Protocol.Input.MouseButton.Left:
-                    return pressed ? RawMouseEventType.LeftButtonDown : RawMouseEventType.LeftButtonUp;
+                    return pressed ? RawPointerEventType.LeftButtonDown : RawPointerEventType.LeftButtonUp;
 
                 case Avalonia.Remote.Protocol.Input.MouseButton.Middle:
-                    return pressed ? RawMouseEventType.MiddleButtonDown : RawMouseEventType.MiddleButtonUp;
+                    return pressed ? RawPointerEventType.MiddleButtonDown : RawPointerEventType.MiddleButtonUp;
 
                 case Avalonia.Remote.Protocol.Input.MouseButton.Right:
-                    return pressed ? RawMouseEventType.RightButtonDown : RawMouseEventType.RightButtonUp;
+                    return pressed ? RawPointerEventType.RightButtonDown : RawPointerEventType.RightButtonUp;
 
                 default:
-                    return RawMouseEventType.Move;
+                    return RawPointerEventType.Move;
             }
         }
 
         private static InputModifiers GetAvaloniaInputModifiers (Avalonia.Remote.Protocol.Input.InputModifiers[] modifiers)
         {
             var result = InputModifiers.None;
+
+            if (modifiers == null)
+            {
+                return result;
+            }
 
             foreach(var modifier in modifiers)
             {
@@ -161,11 +166,11 @@ namespace Avalonia.Controls.Remote.Server
                 {
                     Dispatcher.UIThread.Post(() =>
                     {
-                        Input?.Invoke(new RawMouseEventArgs(
+                        Input?.Invoke(new RawPointerEventArgs(
                             MouseDevice, 
                             0, 
                             InputRoot, 
-                            RawMouseEventType.Move, 
+                            RawPointerEventType.Move, 
                             new Point(pointer.X, pointer.Y), 
                             GetAvaloniaInputModifiers(pointer.Modifiers)));
                     }, DispatcherPriority.Input);
@@ -174,7 +179,7 @@ namespace Avalonia.Controls.Remote.Server
                 {
                     Dispatcher.UIThread.Post(() =>
                     {
-                        Input?.Invoke(new RawMouseEventArgs(
+                        Input?.Invoke(new RawPointerEventArgs(
                             MouseDevice,
                             0,
                             InputRoot,
@@ -187,7 +192,7 @@ namespace Avalonia.Controls.Remote.Server
                 {
                     Dispatcher.UIThread.Post(() =>
                     {
-                        Input?.Invoke(new RawMouseEventArgs(
+                        Input?.Invoke(new RawPointerEventArgs(
                             MouseDevice,
                             0,
                             InputRoot,
@@ -265,11 +270,15 @@ namespace Avalonia.Controls.Remote.Server
             var bpp = fmt == ProtocolPixelFormat.Rgb565 ? 2 : 4;
             var data = new byte[width * height * bpp];
             var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
+
             try
             {
-                _framebuffer = new LockedFramebuffer(handle.AddrOfPinnedObject(), new PixelSize(width, height), width * bpp, _dpi, (PixelFormat)fmt,
-                    null);
-                Paint?.Invoke(new Rect(0, 0, width, height));
+                if (width > 0 && height > 0)
+                {
+                    _framebuffer = new LockedFramebuffer(handle.AddrOfPinnedObject(), new PixelSize(width, height), width * bpp, _dpi, (PixelFormat)fmt,
+                        null);
+                    Paint?.Invoke(new Rect(0, 0, width, height));
+                }
             }
             finally
             {
@@ -301,8 +310,7 @@ namespace Avalonia.Controls.Remote.Server
                     return;
 
             }
-            if (ClientSize.Width < 1 || ClientSize.Height < 1)
-                return;
+
             var format = ProtocolPixelFormat.Rgba8888;
             foreach(var fmt in _supportedFormats)
                 if (fmt <= ProtocolPixelFormat.MaxValue)
@@ -323,8 +331,11 @@ namespace Avalonia.Controls.Remote.Server
 
         public override void Invalidate(Rect rect)
         {
-            _invalidated = true;
-            Dispatcher.UIThread.Post(RenderIfNeeded);
+            if (!IsDisposed)
+            {
+                _invalidated = true;
+                Dispatcher.UIThread.Post(RenderIfNeeded);
+            }
         }
 
         public override IMouseDevice MouseDevice { get; } = new MouseDevice();

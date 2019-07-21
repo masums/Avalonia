@@ -41,6 +41,19 @@ namespace Avalonia.Direct2D1
 
         public static SharpDX.DXGI.Device1 DxgiDevice { get; private set; }
 
+        public IEnumerable<string> InstalledFontNames
+        {
+            get
+            {
+                var cache = Direct2D1FontCollectionCache.s_installedFontCollection;
+                var length = cache.FontFamilyCount;
+                for (int i = 0; i < length; i++)
+                {
+                    var names = cache.GetFontFamily(i).FamilyNames;
+                    yield return names.GetString(0);
+                }
+            }
+        }
 
         private static readonly object s_initLock = new object();
         private static bool s_initialized = false;
@@ -169,10 +182,10 @@ namespace Avalonia.Direct2D1
             return new WriteableWicBitmapImpl(size, dpi, format);
         }
 
-        public IStreamGeometryImpl CreateStreamGeometry()
-        {
-            return new StreamGeometryImpl();
-        }
+        public IGeometryImpl CreateEllipseGeometry(Rect rect) => new EllipseGeometryImpl(rect);
+        public IGeometryImpl CreateLineGeometry(Point p1, Point p2) => new LineGeometryImpl(p1, p2);
+        public IGeometryImpl CreateRectangleGeometry(Rect rect) => new RectangleGeometryImpl(rect);
+        public IStreamGeometryImpl CreateStreamGeometry() => new StreamGeometryImpl();
 
         public IBitmapImpl LoadBitmap(string fileName)
         {
