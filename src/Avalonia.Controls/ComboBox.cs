@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Linq;
 using Avalonia.Controls.Generators;
@@ -9,6 +6,8 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
 using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.VisualTree;
@@ -53,6 +52,30 @@ namespace Avalonia.Controls
         public static readonly StyledProperty<ItemVirtualizationMode> VirtualizationModeProperty =
             ItemsPresenter.VirtualizationModeProperty.AddOwner<ComboBox>();
 
+        /// <summary>
+        /// Defines the <see cref="PlaceholderText"/> property.
+        /// </summary>
+        public static readonly StyledProperty<string> PlaceholderTextProperty =
+            AvaloniaProperty.Register<ComboBox, string>(nameof(PlaceholderText));
+
+        /// <summary>
+        /// Defines the <see cref="PlaceholderForeground"/> property.
+        /// </summary>
+        public static readonly StyledProperty<IBrush> PlaceholderForegroundProperty =
+            AvaloniaProperty.Register<ComboBox, IBrush>(nameof(PlaceholderForeground));
+
+        /// <summary>
+        /// Defines the <see cref="HorizontalContentAlignment"/> property.
+        /// </summary>
+        public static readonly StyledProperty<HorizontalAlignment> HorizontalContentAlignmentProperty =
+            ContentControl.HorizontalContentAlignmentProperty.AddOwner<ComboBox>();
+
+        /// <summary>
+        /// Defines the <see cref="VerticalContentAlignment"/> property.
+        /// </summary>
+        public static readonly StyledProperty<VerticalAlignment> VerticalContentAlignmentProperty =
+            ContentControl.VerticalContentAlignmentProperty.AddOwner<ComboBox>();
+
         private bool _isDropDownOpen;
         private Popup _popup;
         private object _selectionBoxItem;
@@ -65,8 +88,8 @@ namespace Avalonia.Controls
         {
             ItemsPanelProperty.OverrideDefaultValue<ComboBox>(DefaultPanel);
             FocusableProperty.OverrideDefaultValue<ComboBox>(true);
-            SelectedItemProperty.Changed.AddClassHandler<ComboBox>(x => x.SelectedItemChanged);
-            KeyDownEvent.AddClassHandler<ComboBox>(x => x.OnKeyDown, Interactivity.RoutingStrategies.Tunnel);
+            SelectedItemProperty.Changed.AddClassHandler<ComboBox>((x,e) => x.SelectedItemChanged(e));
+            KeyDownEvent.AddClassHandler<ComboBox>((x, e) => x.OnKeyDown(e), Interactivity.RoutingStrategies.Tunnel);
         }
 
         /// <summary>
@@ -97,12 +120,48 @@ namespace Avalonia.Controls
         }
 
         /// <summary>
+        /// Gets or sets the PlaceHolder text.
+        /// </summary>
+        public string PlaceholderText
+        {
+            get { return GetValue(PlaceholderTextProperty); }
+            set { SetValue(PlaceholderTextProperty, value); }
+        }
+
+        /// <summary>
+        /// Gets or sets the Brush that renders the placeholder text.
+        /// </summary>
+        public IBrush PlaceholderForeground
+        {
+            get { return GetValue(PlaceholderForegroundProperty); }
+            set { SetValue(PlaceholderForegroundProperty, value); }
+        }
+
+        /// <summary>
         /// Gets or sets the virtualization mode for the items.
         /// </summary>
         public ItemVirtualizationMode VirtualizationMode
         {
             get { return GetValue(VirtualizationModeProperty); }
             set { SetValue(VirtualizationModeProperty, value); }
+        }
+
+        /// <summary>
+        /// Gets or sets the horizontal alignment of the content within the control.
+        /// </summary>
+        public HorizontalAlignment HorizontalContentAlignment
+        {
+            get { return GetValue(HorizontalContentAlignmentProperty); }
+            set { SetValue(HorizontalContentAlignmentProperty, value); }
+        }
+
+        /// <summary>
+        /// Gets or sets the vertical alignment of the content within the control.
+        /// </summary>
+        public VerticalAlignment VerticalContentAlignment
+        {
+            get { return GetValue(VerticalContentAlignmentProperty); }
+            set { SetValue(VerticalContentAlignmentProperty, value); }
         }
 
         /// <inheritdoc/>
@@ -130,7 +189,7 @@ namespace Avalonia.Controls
                 return;
 
             if (e.Key == Key.F4 ||
-                ((e.Key == Key.Down || e.Key == Key.Up) && ((e.Modifiers & InputModifiers.Alt) != 0)))
+                ((e.Key == Key.Down || e.Key == Key.Up) && ((e.KeyModifiers & KeyModifiers.Alt) != 0)))
             {
                 IsDropDownOpen = !IsDropDownOpen;
                 e.Handled = true;
@@ -202,7 +261,7 @@ namespace Avalonia.Controls
         {
             if (!e.Handled)
             {
-                if (_popup?.PopupRoot != null && ((IVisual)e.Source).GetVisualRoot() == _popup?.PopupRoot)
+                if (_popup?.IsInsidePopup((IVisual)e.Source) == true)
                 {
                     if (UpdateSelectionFromEventSource(e.Source))
                     {
@@ -221,7 +280,7 @@ namespace Avalonia.Controls
         }
 
         /// <inheritdoc/>
-        protected override void OnTemplateApplied(TemplateAppliedEventArgs e)
+        protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
         {
             if (_popup != null)
             {
@@ -231,9 +290,6 @@ namespace Avalonia.Controls
 
             _popup = e.NameScope.Get<Popup>("PART_Popup");
             _popup.Opened += PopupOpened;
-            _popup.Closed += PopupClosed;
-
-            base.OnTemplateApplied(e);
         }
 
         internal void ItemFocused(ComboBoxItem dropDownItem)
@@ -265,7 +321,7 @@ namespace Avalonia.Controls
             var toplevel = this.GetVisualRoot() as TopLevel;
             if (toplevel != null)
             {
-                _subscriptionsOnOpen = toplevel.AddHandler(PointerWheelChangedEvent, (s, ev) =>
+                _subscriptionsOnOpen = toplevel.AddDisposableHandler(PointerWheelChangedEvent, (s, ev) =>
                 {
                     //eat wheel scroll event outside dropdown popup while it's open
                     if (IsDropDownOpen && (ev.Source as IVisual).GetVisualRoot() == toplevel)
@@ -289,9 +345,9 @@ namespace Avalonia.Controls
             {
                 var container = ItemContainerGenerator.ContainerFromIndex(selectedIndex);
 
-                if (container == null && SelectedItems.Count > 0)
+                if (container == null && SelectedIndex != -1)
                 {
-                    ScrollIntoView(SelectedItems[0]);
+                    ScrollIntoView(Selection.SelectedIndex);
                     container = ItemContainerGenerator.ContainerFromIndex(selectedIndex);
                 }
 

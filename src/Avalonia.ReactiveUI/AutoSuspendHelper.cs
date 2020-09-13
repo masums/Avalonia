@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using Avalonia;
 using Avalonia.VisualTree;
 using Avalonia.Controls;
@@ -35,7 +32,12 @@ namespace Avalonia.ReactiveUI
             RxApp.SuspensionHost.IsResuming = Observable.Never<Unit>();
             RxApp.SuspensionHost.IsLaunchingNew = _isLaunchingNew;
 
-            if (lifetime is IControlledApplicationLifetime controlled)
+            if (Avalonia.Controls.Design.IsDesignMode)
+            {
+                this.Log().Debug("Design mode detected. AutoSuspendHelper won't persist app state.");
+                RxApp.SuspensionHost.ShouldPersistState = Observable.Never<IDisposable>();
+            }
+            else if (lifetime is IControlledApplicationLifetime controlled)
             {
                 this.Log().Debug("Using IControlledApplicationLifetime events to handle app exit.");
                 controlled.Exit += (sender, args) => OnControlledApplicationLifetimeExit();
@@ -47,11 +49,11 @@ namespace Avalonia.ReactiveUI
                 var message = $"Don't know how to detect app exit event for {type}.";
                 throw new NotSupportedException(message);
             }
-            else 
+            else
             {
                 var message = "ApplicationLifetime is null. "
                             + "Ensure you are initializing AutoSuspendHelper "
-                            + "when Avalonia application initialization is completed.";
+                            + "after Avalonia application initialization is completed.";
                 throw new ArgumentNullException(message);
             }
             

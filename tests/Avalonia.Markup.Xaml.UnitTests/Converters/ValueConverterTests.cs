@@ -8,7 +8,7 @@ using Xunit;
 
 namespace Avalonia.Markup.Xaml.UnitTests.Converters
 {
-    public class ValueConverterTests
+    public class ValueConverterTests : XamlTestBase
     {
         [Fact]
         public void ValueConverter_Special_Values_Work()
@@ -21,8 +21,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Converters
         xmlns:c='clr-namespace:Avalonia.Markup.Xaml.UnitTests.Converters;assembly=Avalonia.Markup.Xaml.UnitTests'>
     <TextBlock Name='textBlock' Text='{Binding Converter={x:Static c:TestConverter.Instance}, FallbackValue=bar}'/>
 </Window>";
-                var loader = new AvaloniaXamlLoader();
-                var window = (Window)loader.Load(xaml);
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(xaml);
                 var textBlock = window.FindControl<TextBlock>("textBlock");
 
                 window.ApplyTemplate();

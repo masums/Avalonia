@@ -14,7 +14,7 @@ jobs:
     displayName: 'Install Nuke'
     inputs:
       script: |
-         dotnet tool install --global Nuke.GlobalTool --version 0.12.3
+         dotnet tool install --global Nuke.GlobalTool --version 0.24.0
   - task: CmdLine@2
     displayName: 'Run Nuke'
     inputs:
@@ -34,9 +34,10 @@ jobs:
   pool:
     vmImage: 'macOS-10.14'
   steps:
-  - task: DotNetCoreInstaller@0
+  - task: UseDotNet@2
+    displayName: 'Use .NET Core SDK 3.1.401'
     inputs:
-      version: '2.1.403'
+      version: 3.1.401
 
   - task: CmdLine@2
     displayName: 'Install Mono 5.18'
@@ -52,21 +53,14 @@ jobs:
       sdk: 'macosx10.14'
       configuration: 'Release'
       xcWorkspacePath: '**/*.xcodeproj/project.xcworkspace'
-      xcodeVersion: 'default' # Options: 8, 9, default, specifyPath
+      xcodeVersion: '10' # Options: 8, 9, default, specifyPath
       args: '-derivedDataPath ./'
-
-  - task: CmdLine@2
-    displayName: 'Install CastXML'
-    inputs:
-      script: |
-        brew update
-        brew install castxml
 
   - task: CmdLine@2
     displayName: 'Install Nuke'
     inputs:
       script: |
-       dotnet tool install --global Nuke.GlobalTool --version 0.12.3 
+       dotnet tool install --global Nuke.GlobalTool --version 0.24.0
 
   - task: CmdLine@2
     displayName: 'Run Nuke'
@@ -80,7 +74,7 @@ jobs:
         export PATH="$PATH:$HOME/.dotnet/tools"
         dotnet --info
         printenv
-        nuke --target CiAzureOSX --configuration Release
+        nuke --target CiAzureOSX --configuration Release --skip-previewer
 
   - task: PublishTestResults@2
     inputs:
@@ -104,11 +98,16 @@ jobs:
   pool:
     vmImage: 'windows-2019'
   steps:
+  - task: UseDotNet@2
+    displayName: 'Use .NET Core SDK 3.1.401'
+    inputs:
+      version: 3.1.401
+
   - task: CmdLine@2
     displayName: 'Install Nuke'
     inputs:
       script: |
-       dotnet tool install --global Nuke.GlobalTool --version 0.12.3 
+       dotnet tool install --global Nuke.GlobalTool --version 0.24.0 
 
   - task: CmdLine@2
     displayName: 'Run Nuke'
@@ -134,3 +133,4 @@ jobs:
       pathToPublish: '$(Build.SourcesDirectory)/artifacts/zip'
       artifactName: 'Samples'
     condition: succeeded()
+

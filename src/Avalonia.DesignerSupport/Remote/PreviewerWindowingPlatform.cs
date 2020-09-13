@@ -19,7 +19,7 @@ namespace Avalonia.DesignerSupport.Remote
         
         public IWindowImpl CreateWindow() => new WindowStub();
 
-        public IEmbeddableWindowImpl CreateEmbeddableWindow()
+        public IWindowImpl CreateEmbeddableWindow()
         {
             if (s_lastWindow != null)
             {
@@ -40,8 +40,6 @@ namespace Avalonia.DesignerSupport.Remote
             return s_lastWindow;
         }
 
-        public IPopupImpl CreatePopup() => new WindowStub();
-
         public static void Initialize(IAvaloniaRemoteTransportConnection transport)
         {
             s_transport = transport;
@@ -54,7 +52,7 @@ namespace Avalonia.DesignerSupport.Remote
                 .Bind<IPlatformSettings>().ToConstant(instance)
                 .Bind<IPlatformThreadingInterface>().ToConstant(threading)
                 .Bind<IRenderLoop>().ToConstant(new RenderLoop())
-                .Bind<IRenderTimer>().ToConstant(threading)
+                .Bind<IRenderTimer>().ToConstant(new DefaultRenderTimer(60))
                 .Bind<ISystemDialogImpl>().ToSingleton<SystemDialogsStub>()
                 .Bind<IWindowingPlatform>().ToConstant(instance)
                 .Bind<IPlatformIconLoader>().ToSingleton<IconLoaderStub>()

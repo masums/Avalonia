@@ -1,9 +1,7 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
-using Avalonia.Controls.Platform;
-using Avalonia.Controls.Presenters;
+using System.Collections.Generic;
+using System.Reactive.Disposables;
+using Avalonia.Controls.Primitives.PopupPositioning;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform;
@@ -16,42 +14,46 @@ namespace Avalonia.Controls.Primitives
     /// <summary>
     /// The root window of a <see cref="Popup"/>.
     /// </summary>
-    public class PopupRoot : WindowBase, IInteractive, IHostedVisualTreeRoot, IDisposable, IStyleHost
+    public sealed class PopupRoot : WindowBase, IInteractive, IHostedVisualTreeRoot, IDisposable, IStyleHost, IPopupHost
     {
-        private IDisposable _presenterSubscription;
+        private readonly TopLevel _parent;
+        private PopupPositionerParameters _positionerParameters;        
 
         /// <summary>
         /// Initializes static members of the <see cref="PopupRoot"/> class.
         /// </summary>
         static PopupRoot()
         {
-            BackgroundProperty.OverrideDefaultValue(typeof(PopupRoot), Brushes.White);
+            BackgroundProperty.OverrideDefaultValue(typeof(PopupRoot), Brushes.White);            
         }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="PopupRoot"/> class.
         /// </summary>
-        public PopupRoot()
-            : this(null)
+        public PopupRoot(TopLevel parent, IPopupImpl impl)
+            : this(parent, impl,null)
         {
         }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="PopupRoot"/> class.
         /// </summary>
+        /// <param name="parent">The popup parent.</param>
+        /// <param name="impl">The popup implementation.</param>
         /// <param name="dependencyResolver">
         /// The dependency resolver to use. If null the default dependency resolver will be used.
         /// </param>
-        public PopupRoot(IAvaloniaDependencyResolver dependencyResolver)
-            : base(PlatformManager.CreatePopup(), dependencyResolver)
+        public PopupRoot(TopLevel parent, IPopupImpl impl, IAvaloniaDependencyResolver dependencyResolver)
+            : base(impl, dependencyResolver)
         {
+            _parent = parent;
         }
 
         /// <summary>
         /// Gets the platform-specific window implementation.
         /// </summary>
         [CanBeNull]
-        public new IPopupImpl PlatformImpl => (IPopupImpl)base.PlatformImpl;
+        public new IPopupImpl PlatformImpl => (IPopupImpl)base.PlatformImpl;               
 
         /// <summary>
         /// Gets the parent control in the event route.
@@ -74,72 +76,96 @@ namespace Avalonia.Controls.Primitives
         /// <inheritdoc/>
         public void Dispose() => PlatformImpl?.Dispose();
 
-        /// <summary>
-        /// Moves the Popups position so that it doesnt overlap screen edges.
-        /// This method can be called immediately after Show has been called.
-        /// </summary>
-        public void SnapInsideScreenEdges()
+        private void UpdatePosition()
         {
-            var screen = (VisualRoot as WindowBase)?.Screens?.ScreenFromPoint(Position);
-
-            if (screen != null)
-            {
-                var scaling = VisualRoot.RenderScaling;
-                var bounds = PixelRect.FromRect(Bounds, scaling);
-                var screenX = Position.X + bounds.Width - screen.Bounds.X;
-                var screenY = Position.Y + bounds.Height - screen.Bounds.Y;
-
-                if (screenX > screen.Bounds.Width)
-                {
-                    Position = Position.WithX(Position.X - (screenX - screen.Bounds.Width));
-                }
-
-                if (screenY > screen.Bounds.Height)
-                {
-                    Position = Position.WithY(Position.Y - (screenY - screen.Bounds.Height));
-                }
-            }
+            PlatformImpl?.PopupPositioner.Update(_positionerParameters);
         }
 
-        /// <inheritdoc/>
-        protected override void OnTemplateApplied(TemplateAppliedEventArgs e)
+        public void ConfigurePosition(IVisual target, PlacementMode placement, Point offset,
+            PopupAnchor anchor = PopupAnchor.None,
+            PopupGravity gravity = PopupGravity.None,
+            PopupPositionerConstraintAdjustment constraintAdjustment = PopupPositionerConstraintAdjustment.All,
+            Rect? rect = null)
         {
-            base.OnTemplateApplied(e);
+            _positionerParameters.ConfigurePosition(_parent, target,
+                placement, offset, anchor, gravity, constraintAdjustment, rect);
 
-            if (Parent?.TemplatedParent != null)
-            {
-                if (_presenterSubscription != null)
-                {
-                    _presenterSubscription.Dispose();
-                    _presenterSubscription = null;
-                }
-
-                Presenter?.ApplyTemplate();
-                Presenter?.GetObservable(ContentPresenter.ChildProperty)
-                    .Subscribe(SetTemplatedParentAndApplyChildTemplates);
-            }
+            if (_positionerParameters.Size != default)
+                UpdatePosition();
         }
 
-        private void SetTemplatedParentAndApplyChildTemplates(IControl control)
+        public void SetChild(IControl control) => Content = control;
+
+        IVisual IPopupHost.HostedVisualTreeRoot => this;
+        
+        public IDisposable BindConstraints(AvaloniaObject popup, StyledProperty<double> widthProperty, StyledProperty<double> minWidthProperty,
+            StyledProperty<double> maxWidthProperty, StyledProperty<double> heightProperty, StyledProperty<double> minHeightProperty,
+            StyledProperty<double> maxHeightProperty, StyledProperty<bool> topmostProperty)
         {
-            if (control != null)
+            var bindings = new List<IDisposable>();
+
+            void Bind(AvaloniaProperty what, AvaloniaProperty to) => bindings.Add(this.Bind(what, popup[~to]));
+            Bind(WidthProperty, widthProperty);
+            Bind(MinWidthProperty, minWidthProperty);
+            Bind(MaxWidthProperty, maxWidthProperty);
+            Bind(HeightProperty, heightProperty);
+            Bind(MinHeightProperty, minHeightProperty);
+            Bind(MaxHeightProperty, maxHeightProperty);
+            Bind(TopmostProperty, topmostProperty);
+            return Disposable.Create(() =>
             {
-                var templatedParent = Parent.TemplatedParent;
+                foreach (var x in bindings)
+                    x.Dispose();
+            });
+        }
 
-                if (control.TemplatedParent == null)
-                {
-                    control.SetValue(TemplatedParentProperty, templatedParent);
-                }
+        protected override Size MeasureOverride(Size availableSize)
+        {
+            var maxAutoSize = PlatformImpl?.MaxAutoSizeHint ?? Size.Infinity;
+            var constraint = availableSize;
 
-                control.ApplyTemplate();
+            if (double.IsInfinity(constraint.Width))
+            {
+                constraint = constraint.WithWidth(maxAutoSize.Width);
+            }
 
-                if (!(control is IPresenter) && control.TemplatedParent == templatedParent)
-                {
-                    foreach (IControl child in control.GetVisualChildren())
-                    {
-                        SetTemplatedParentAndApplyChildTemplates(child);
-                    }
-                }
+            if (double.IsInfinity(constraint.Height))
+            {
+                constraint = constraint.WithHeight(maxAutoSize.Height);
+            }
+
+            var measured = base.MeasureOverride(constraint);
+            var width = measured.Width;
+            var height = measured.Height;
+            var widthCache = Width;
+            var heightCache = Height;
+
+            if (!double.IsNaN(widthCache))
+            {
+                width = widthCache;
+            }
+
+            width = Math.Min(width, MaxWidth);
+            width = Math.Max(width, MinWidth);
+
+            if (!double.IsNaN(heightCache))
+            {
+                height = heightCache;
+            }
+
+            height = Math.Min(height, MaxHeight);
+            height = Math.Max(height, MinHeight);
+
+            return new Size(width, height);
+        }
+
+        protected override sealed Size ArrangeSetBounds(Size size)
+        {
+            using (BeginAutoSizing())
+            {
+                _positionerParameters.Size = size;
+                UpdatePosition();
+                return ClientSize;
             }
         }
     }

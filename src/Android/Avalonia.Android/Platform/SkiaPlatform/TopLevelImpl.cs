@@ -15,10 +15,10 @@ using Avalonia.Rendering;
 namespace Avalonia.Android.Platform.SkiaPlatform
 {
     class TopLevelImpl : IAndroidView, ITopLevelImpl,  IFramebufferPlatformSurface
-
     {
         private readonly AndroidKeyboardEventsHelper<TopLevelImpl> _keyboardHelper;
         private readonly AndroidTouchEventsHelper<TopLevelImpl> _touchHelper;
+
         private ViewImpl _view;
 
         public TopLevelImpl(Context context, bool placeOnTop = false)
@@ -27,6 +27,8 @@ namespace Avalonia.Android.Platform.SkiaPlatform
             _keyboardHelper = new AndroidKeyboardEventsHelper<TopLevelImpl>(this);
             _touchHelper = new AndroidTouchEventsHelper<TopLevelImpl>(this, () => InputRoot,
                 p => GetAvaloniaPointFromEvent(p));
+
+            Surfaces = new object[] { this };
 
             MaxClientSize = new Size(_view.Resources.DisplayMetrics.WidthPixels,
                 _view.Resources.DisplayMetrics.HeightPixels);
@@ -82,7 +84,7 @@ namespace Avalonia.Android.Platform.SkiaPlatform
 
         public IPlatformHandle Handle => _view;
 
-        public IEnumerable<object> Surfaces => new object[] {this};
+        public IEnumerable<object> Surfaces { get; }
 
         public IRenderer CreateRenderer(IRenderRoot root)
         {
@@ -124,7 +126,7 @@ namespace Avalonia.Android.Platform.SkiaPlatform
             _view.Visibility = ViewStates.Visible;
         }
 
-        public double Scaling => 1;
+        public double RenderScaling => 1;
 
         void Draw()
         {
@@ -190,6 +192,10 @@ namespace Avalonia.Android.Platform.SkiaPlatform
                 base.SurfaceChanged(holder, format, width, height);
             }
         }
+
+        public IPopupImpl CreatePopup() => null;
+        
+        public Action LostFocus { get; set; }
 
         ILockedFramebuffer IFramebufferPlatformSurface.Lock()=>new AndroidFramebuffer(_view.Holder.Surface);
     }

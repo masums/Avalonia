@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System.Linq;
 using System.Reactive.Linq;
 using Avalonia.Controls;
@@ -10,7 +7,7 @@ using Xunit;
 
 namespace Avalonia.Markup.Xaml.UnitTests.Data
 {
-    public class BindingTests_TemplatedParent
+    public class BindingTests_TemplatedParent : XamlTestBase
     {
         [Fact]
         public void TemplateBinding_With_Null_Path_Works()
@@ -29,8 +26,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Data
        </Button.Template>
     </Button>
 </Window>";
-                var loader = new AvaloniaXamlLoader();
-                var window = (Window)loader.Load(xaml);
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(xaml);
                 var button = window.FindControl<Button>("button");
 
                 window.ApplyTemplate();

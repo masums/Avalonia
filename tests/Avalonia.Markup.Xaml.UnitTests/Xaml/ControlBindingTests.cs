@@ -1,17 +1,13 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System.Collections.Generic;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Layout;
 using Avalonia.Logging;
 using Avalonia.UnitTests;
 using Xunit;
 
 namespace Avalonia.Markup.Xaml.UnitTests.Xaml
 {
-    public class ControlBindingTests
+    public class ControlBindingTests : XamlTestBase
     {
         [Fact]
         public void Binding_ProgressBar_Value_To_Invalid_Value_Uses_FallbackValue()
@@ -22,8 +18,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
 <Window xmlns='https://github.com/avaloniaui'>
     <ProgressBar Maximum='10' Value='{Binding Value, FallbackValue=3}'/>
 </Window>";
-                var loader = new AvaloniaXamlLoader();
-                var window = (Window)loader.Load(xaml);
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(xaml);
                 var progressBar = (ProgressBar)window.Content;
 
                 window.DataContext = new { Value = "foo" };
@@ -59,8 +54,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
 <Window xmlns='https://github.com/avaloniaui'>
     <ProgressBar Maximum='10' Value='{Binding Value, FallbackValue=bar}'/>
 </Window>";
-                var loader = new AvaloniaXamlLoader();
-                var window = (Window)loader.Load(xaml);
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(xaml);
                 var progressBar = (ProgressBar)window.Content;
 
                 window.DataContext = new { Value = "foo" };
@@ -95,8 +89,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
         </Carousel>
     </DockPanel>
 </Window>";
-                var loader = new AvaloniaXamlLoader();
-                var window = (Window)loader.Load(xaml);
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(xaml);
                 var strip = window.FindControl<TabStrip>("strip");
                 var carousel = window.FindControl<Carousel>("carousel");
 

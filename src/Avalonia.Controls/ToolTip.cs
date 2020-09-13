@@ -1,9 +1,7 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Reactive.Linq;
 using Avalonia.Controls.Primitives;
+using Avalonia.VisualTree;
 
 namespace Avalonia.Controls
 {
@@ -57,10 +55,10 @@ namespace Avalonia.Controls
         /// <summary>
         /// Stores the current <see cref="ToolTip"/> instance in the control.
         /// </summary>
-        private static readonly AttachedProperty<ToolTip> ToolTipProperty =
+        internal static readonly AttachedProperty<ToolTip> ToolTipProperty =
             AvaloniaProperty.RegisterAttached<ToolTip, Control, ToolTip>("ToolTip");
 
-        private PopupRoot _popup;
+        private IPopupHost _popup;
 
         /// <summary>
         /// Initializes static members of the <see cref="ToolTip"/> class.
@@ -68,6 +66,7 @@ namespace Avalonia.Controls
         static ToolTip()
         {
             TipProperty.Changed.Subscribe(ToolTipService.Instance.TipChanged);
+            IsOpenProperty.Changed.Subscribe(ToolTipService.Instance.TipOpenChanged);
             IsOpenProperty.Changed.Subscribe(IsOpenChanged);
         }
 
@@ -206,13 +205,15 @@ namespace Avalonia.Controls
         private static void IsOpenChanged(AvaloniaPropertyChangedEventArgs e)
         {
             var control = (Control)e.Sender;
+            var newValue = (bool)e.NewValue;
+            ToolTip toolTip;
 
-            if ((bool)e.NewValue)
+            if (newValue)
             {
                 var tip = GetTip(control);
                 if (tip == null) return;
 
-                var toolTip = control.GetValue(ToolTipProperty);
+                toolTip = control.GetValue(ToolTipProperty);
                 if (toolTip == null || (tip != toolTip && tip != toolTip.Content))
                 {
                     toolTip?.Close();
@@ -225,31 +226,50 @@ namespace Avalonia.Controls
             }
             else
             {
-                var toolTip = control.GetValue(ToolTipProperty);
+                toolTip = control.GetValue(ToolTipProperty);
                 toolTip?.Close();
             }
+
+            toolTip?.UpdatePseudoClasses(newValue);
         }
 
         private void Open(Control control)
         {
             Close();
 
-            _popup = new PopupRoot { Content = this,  };
+            _popup = OverlayPopupHost.CreatePopupHost(control, null);
+            _popup.SetChild(this);
             ((ISetLogicalParent)_popup).SetParent(control);
-            _popup.Position = Popup.GetPosition(control, GetPlacement(control), _popup,
-                GetHorizontalOffset(control), GetVerticalOffset(control));
+            
+            _popup.ConfigurePosition(control, GetPlacement(control), 
+                new Point(GetHorizontalOffset(control), GetVerticalOffset(control)));
+
+            WindowManagerAddShadowHintChanged(_popup, false);
+
             _popup.Show();
-            _popup.SnapInsideScreenEdges();
         }
 
         private void Close()
         {
             if (_popup != null)
             {
-                _popup.Content = null;
-                _popup.Hide();
+                _popup.SetChild(null);
+                _popup.Dispose();
                 _popup = null;
             }
+        }
+
+        private void WindowManagerAddShadowHintChanged(IPopupHost host, bool hint)
+        {
+            if (host is PopupRoot pr)
+            {
+                pr.PlatformImpl.SetWindowManagerAddShadowHint(hint);
+            }
+        }
+
+        private void UpdatePseudoClasses(bool newValue)
+        {
+            PseudoClasses.Set(":open", newValue);
         }
     }
 }

@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using Avalonia.Media;
 using Avalonia.Platform;
@@ -26,7 +23,7 @@ namespace Avalonia.Skia
         }
 
         /// <inheritdoc />
-        public bool StrokeContains(Pen pen, Point point)
+        public bool StrokeContains(IPen pen, Point point)
         {
             // Skia requires to compute stroke path to check for point containment.
             // Due to that we are caching using stroke width.
@@ -89,7 +86,7 @@ namespace Avalonia.Skia
         }
 
         /// <inheritdoc />
-        public Rect GetRenderBounds(Pen pen)
+        public Rect GetRenderBounds(IPen pen)
         {
             var strokeWidth = (float)(pen?.Thickness ?? 0);
             
@@ -98,7 +95,7 @@ namespace Avalonia.Skia
                 UpdatePathCache(strokeWidth);
             }
             
-            return _pathCache.CachedGeometryRenderBounds.Inflate(strokeWidth / 2.0);
+            return _pathCache.CachedGeometryRenderBounds;
         }
         
         /// <inheritdoc />

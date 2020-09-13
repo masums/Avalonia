@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -9,8 +6,8 @@ using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.LogicalTree;
-using Avalonia.Markup.Data;
 using Avalonia.Styling;
+using Avalonia.UnitTests;
 using Avalonia.VisualTree;
 using Xunit;
 

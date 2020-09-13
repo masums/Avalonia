@@ -1,11 +1,9 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Controls.Utils;
 using Avalonia.Data;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.LogicalTree;
 using Avalonia.Media;
@@ -27,7 +25,7 @@ namespace Avalonia.Controls.Presenters
         /// <summary>
         /// Defines the <see cref="BorderBrush"/> property.
         /// </summary>
-        public static readonly AvaloniaProperty<IBrush> BorderBrushProperty =
+        public static readonly StyledProperty<IBrush> BorderBrushProperty =
             Border.BorderBrushProperty.AddOwner<ContentPresenter>();
 
         /// <summary>
@@ -42,7 +40,12 @@ namespace Avalonia.Controls.Presenters
         public static readonly StyledProperty<CornerRadius> CornerRadiusProperty =
             Border.CornerRadiusProperty.AddOwner<ContentPresenter>();
 
-
+        /// <summary>
+        /// Defines the <see cref="BoxShadow"/> property.
+        /// </summary>
+        public static readonly StyledProperty<BoxShadows> BoxShadowProperty =
+            Border.BoxShadowProperty.AddOwner<ContentPresenter>();
+        
         /// <summary>
         /// Defines the <see cref="Child"/> property.
         /// </summary>
@@ -83,8 +86,7 @@ namespace Avalonia.Controls.Presenters
 
         private IControl _child;
         private bool _createdChild;
-        EventHandler<AvaloniaPropertyChangedEventArgs> _childChanging;
-        private IDataTemplate _dataTemplate;
+        private IRecyclingDataTemplate _recyclingDataTemplate;
         private readonly BorderRenderHelper _borderRenderer = new BorderRenderHelper();
 
         /// <summary>
@@ -93,10 +95,11 @@ namespace Avalonia.Controls.Presenters
         static ContentPresenter()
         {
             AffectsRender<ContentPresenter>(BackgroundProperty, BorderBrushProperty, BorderThicknessProperty, CornerRadiusProperty);
+            AffectsArrange<ContentPresenter>(HorizontalContentAlignmentProperty, VerticalContentAlignmentProperty);
             AffectsMeasure<ContentPresenter>(BorderThicknessProperty, PaddingProperty);
-            ContentProperty.Changed.AddClassHandler<ContentPresenter>(x => x.ContentChanged);
-            ContentTemplateProperty.Changed.AddClassHandler<ContentPresenter>(x => x.ContentChanged);
-            TemplatedParentProperty.Changed.AddClassHandler<ContentPresenter>(x => x.TemplatedParentChanged);
+            ContentProperty.Changed.AddClassHandler<ContentPresenter>((x, e) => x.ContentChanged(e));
+            ContentTemplateProperty.Changed.AddClassHandler<ContentPresenter>((x, e) => x.ContentChanged(e));
+            TemplatedParentProperty.Changed.AddClassHandler<ContentPresenter>((x, e) => x.TemplatedParentChanged(e));
         }
 
         /// <summary>
@@ -133,6 +136,15 @@ namespace Avalonia.Controls.Presenters
         {
             get { return GetValue(CornerRadiusProperty); }
             set { SetValue(CornerRadiusProperty, value); }
+        }
+
+        /// <summary>
+        /// Gets or sets the box shadow effect parameters
+        /// </summary>
+        public BoxShadows BoxShadow
+        {
+            get => GetValue(BoxShadowProperty);
+            set => SetValue(BoxShadowProperty, value);
         }
 
         /// <summary>
@@ -190,12 +202,10 @@ namespace Avalonia.Controls.Presenters
             set { SetValue(PaddingProperty, value); }
         }
 
-        /// <inheritdoc/>
-        event EventHandler<AvaloniaPropertyChangedEventArgs> IContentPresenter.ChildChanging
-        {
-            add => _childChanging += value;
-            remove => _childChanging -= value;
-        }
+        /// <summary>
+        /// Gets the host content control.
+        /// </summary>
+        internal IContentPresenterHost Host { get; private set; }
 
         /// <inheritdoc/>
         public sealed override void ApplyTemplate()
@@ -222,31 +232,17 @@ namespace Avalonia.Controls.Presenters
             var content = Content;
             var oldChild = Child;
             var newChild = CreateChild();
+            var logicalChildren = Host?.LogicalChildren ?? LogicalChildren;
 
             // Remove the old child if we're not recycling it.
             if (newChild != oldChild)
             {
+
                 if (oldChild != null)
                 {
                     VisualChildren.Remove(oldChild);
-                }
-
-                if (oldChild?.Parent == this)
-                {
-                    // If we're the child's parent then the presenter isn't in a ContentControl's
-                    // template.
-                    LogicalChildren.Remove(oldChild);
-                }
-                else
-                {
-                    // If we're in a ContentControl's template then invoke ChildChanging to let
-                    // ContentControlMixin handle removing the logical child.
-                    _childChanging?.Invoke(this, new AvaloniaPropertyChangedEventArgs(
-                        this,
-                        ChildProperty,
-                        oldChild,
-                        newChild,
-                        BindingPriority.LocalValue));
+                    logicalChildren.Remove(oldChild);
+                    ((ISetInheritanceParent)oldChild).SetParent(oldChild.Parent);
                 }
             }
 
@@ -268,15 +264,11 @@ namespace Avalonia.Controls.Presenters
             else if (newChild != oldChild)
             {
                 ((ISetInheritanceParent)newChild).SetParent(this);
-
                 Child = newChild;
 
-                // If we're in a ContentControl's template then the child's parent will have been
-                // set by ContentControlMixin in response to Child changing. If not, then we're
-                // standalone and should make the control our own logical child.
-                if (newChild.Parent == null && TemplatedParent == null)
+                if (!logicalChildren.Contains(newChild))
                 {
-                    LogicalChildren.Add(newChild);
+                    logicalChildren.Add(newChild);
                 }
 
                 VisualChildren.Add(newChild);
@@ -289,7 +281,7 @@ namespace Avalonia.Controls.Presenters
         protected override void OnAttachedToLogicalTree(LogicalTreeAttachmentEventArgs e)
         {
             base.OnAttachedToLogicalTree(e);
-            _dataTemplate = null;
+            _recyclingDataTemplate = null;
             _createdChild = false;
             InvalidateMeasure();
         }
@@ -297,7 +289,8 @@ namespace Avalonia.Controls.Presenters
         /// <inheritdoc/>
         public override void Render(DrawingContext context)
         {
-            _borderRenderer.Render(context, Bounds.Size, BorderThickness, CornerRadius, Background, BorderBrush);
+            _borderRenderer.Render(context, Bounds.Size, BorderThickness, CornerRadius, Background, BorderBrush,
+                BoxShadow);
         }
 
         /// <summary>
@@ -314,22 +307,21 @@ namespace Avalonia.Controls.Presenters
             {
                 var dataTemplate = this.FindDataTemplate(content, ContentTemplate) ?? FuncDataTemplate.Default;
 
-                // We have content and it isn't a control, so if the new data template is the same
-                // as the old data template, try to recycle the existing child control to display
-                // the new data.
-                if (dataTemplate == _dataTemplate && dataTemplate.SupportsRecycling)
+                if (dataTemplate is IRecyclingDataTemplate rdt)
                 {
-                    newChild = oldChild;
+                    var toRecycle = rdt == _recyclingDataTemplate ? oldChild : null;
+                    newChild = rdt.Build(content, toRecycle);
+                    _recyclingDataTemplate = rdt;
                 }
                 else
                 {
-                    _dataTemplate = dataTemplate;
-                    newChild = _dataTemplate.Build(content);
+                    newChild = dataTemplate.Build(content);
+                    _recyclingDataTemplate = null;
                 }
             }
             else
             {
-                _dataTemplate = null;
+                _recyclingDataTemplate = null;
             }
 
             return newChild;
@@ -344,8 +336,6 @@ namespace Avalonia.Controls.Presenters
         /// <inheritdoc/>
         protected override Size ArrangeOverride(Size finalSize)
         {
-            _borderRenderer.Update(finalSize, BorderThickness, CornerRadius);
-
             return ArrangeOverrideImpl(finalSize, new Vector());
         }
 
@@ -375,12 +365,8 @@ namespace Avalonia.Controls.Presenters
 
             if (useLayoutRounding)
             {
-                sizeForChild = new Size(
-                    Math.Ceiling(sizeForChild.Width * scale) / scale,
-                    Math.Ceiling(sizeForChild.Height * scale) / scale);
-                availableSize = new Size(
-                    Math.Ceiling(availableSize.Width * scale) / scale,
-                    Math.Ceiling(availableSize.Height * scale) / scale);
+                sizeForChild = LayoutHelper.RoundLayoutSize(sizeForChild, scale, scale);
+                availableSize = LayoutHelper.RoundLayoutSize(availableSize, scale, scale);
             }
 
             switch (horizontalContentAlignment)
@@ -405,8 +391,8 @@ namespace Avalonia.Controls.Presenters
 
             if (useLayoutRounding)
             {
-                originX = Math.Floor(originX * scale) / scale;
-                originY = Math.Floor(originY * scale) / scale;
+                originX = LayoutHelper.RoundLayoutValue(originX, scale);
+                originY = LayoutHelper.RoundLayoutValue(originY, scale);
             }
 
             var boundsForChild =
@@ -433,8 +419,9 @@ namespace Avalonia.Controls.Presenters
             {
                 VisualChildren.Remove(Child);
                 LogicalChildren.Remove(Child);
+                ((ISetInheritanceParent)Child).SetParent(Child.Parent);
                 Child = null;
-                _dataTemplate = null;
+                _recyclingDataTemplate = null;
             }
 
             InvalidateMeasure();
@@ -454,7 +441,8 @@ namespace Avalonia.Controls.Presenters
 
         private void TemplatedParentChanged(AvaloniaPropertyChangedEventArgs e)
         {
-            (e.NewValue as IContentPresenterHost)?.RegisterContentPresenter(this);
+            var host = e.NewValue as IContentPresenterHost;
+            Host = host?.RegisterContentPresenter(this) == true ? host : null;
         }
     }
 }

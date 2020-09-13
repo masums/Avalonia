@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -39,8 +36,9 @@ namespace Avalonia
     public class Win32PlatformOptions
     {
         public bool UseDeferredRendering { get; set; } = true;
-        public bool AllowEglInitialization { get; set; }
+        public bool AllowEglInitialization { get; set; } = true;
         public bool? EnableMultitouch { get; set; }
+        public bool OverlayPopups { get; set; }
     }
 }
 
@@ -60,7 +58,13 @@ namespace Avalonia.Win32
             CreateMessageWindow();
         }
 
+        /// <summary>
+        /// Gets the actual WindowsVersion. Same as the info returned from RtlGetVersion.
+        /// </summary>
+        public static Version WindowsVersion { get; } = RtlGetVersion();
+
         public static bool UseDeferredRendering => Options.UseDeferredRendering;
+        internal static bool UseOverlayPopups => Options.OverlayPopups;
         public static Win32PlatformOptions Options { get; private set; }
 
         public Size DoubleClickSize => new Size(
@@ -84,11 +88,14 @@ namespace Avalonia.Win32
                 .Bind<IPlatformSettings>().ToConstant(s_instance)
                 .Bind<IPlatformThreadingInterface>().ToConstant(s_instance)
                 .Bind<IRenderLoop>().ToConstant(new RenderLoop())
-                .Bind<IRenderTimer>().ToConstant(new RenderTimer(60))
+                .Bind<IRenderTimer>().ToConstant(new DefaultRenderTimer(60))
                 .Bind<ISystemDialogImpl>().ToSingleton<SystemDialogImpl>()
                 .Bind<IWindowingPlatform>().ToConstant(s_instance)
                 .Bind<PlatformHotkeyConfiguration>().ToSingleton<PlatformHotkeyConfiguration>()
-                .Bind<IPlatformIconLoader>().ToConstant(s_instance);
+                .Bind<IPlatformIconLoader>().ToConstant(s_instance)
+                .Bind<AvaloniaSynchronizationContext.INonPumpingPlatformWaitProvider>().ToConstant(new NonPumpingWaitProvider())
+                .Bind<IMountedVolumeInfoProvider>().ToConstant(new WindowsMountedVolumeInfoProvider());
+
             if (options.AllowEglInitialization)
                 Win32GlManager.Initialize();
             
@@ -203,16 +210,11 @@ namespace Avalonia.Win32
             return new WindowImpl();
         }
 
-        public IEmbeddableWindowImpl CreateEmbeddableWindow()
+        public IWindowImpl CreateEmbeddableWindow()
         {
             var embedded = new EmbeddedWindowImpl();
             embedded.Show();
             return embedded;
-        }
-
-        public IPopupImpl CreatePopup()
-        {
-            return new PopupImpl();
         }
 
         public IWindowIconImpl LoadIcon(string fileName)

@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using Avalonia.Controls;
 using Avalonia.Controls.Embedding;
 using Avalonia.Input;
 using Avalonia.Input.Raw;
@@ -17,11 +18,11 @@ using MouseButton = System.Windows.Input.MouseButton;
 
 namespace Avalonia.Win32.Interop.Wpf
 {
-    class WpfTopLevelImpl : FrameworkElement, IEmbeddableWindowImpl
+    class WpfTopLevelImpl : FrameworkElement, ITopLevelImpl
     {
         private HwndSource _currentHwndSource;
         private readonly HwndSourceHook _hook;
-        private readonly IEmbeddableWindowImpl _ttl;
+        private readonly ITopLevelImpl _ttl;
         private IInputRoot _inputRoot;
         private readonly IEnumerable<object> _surfaces;
         private readonly IMouseDevice _mouse;
@@ -74,7 +75,7 @@ namespace Avalonia.Win32.Interop.Wpf
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wparam, IntPtr lparam, ref bool handled)
         {
             if (msg == (int)UnmanagedMethods.WindowsMessage.WM_DPICHANGED)
-                _ttl.ScalingChanged?.Invoke(_ttl.Scaling);
+                _ttl.ScalingChanged?.Invoke(_ttl.RenderScaling);
             return IntPtr.Zero;
         }
 
@@ -83,7 +84,7 @@ namespace Avalonia.Win32.Interop.Wpf
             _currentHwndSource?.RemoveHook(_hook);
             _currentHwndSource = e.NewSource as HwndSource;
             _currentHwndSource?.AddHook(_hook);
-            _ttl.ScalingChanged?.Invoke(_ttl.Scaling);
+            _ttl.ScalingChanged?.Invoke(_ttl.RenderScaling);
         }
 
         public IRenderer CreateRenderer(IRenderRoot root)
@@ -101,7 +102,7 @@ namespace Avalonia.Win32.Interop.Wpf
         Size ITopLevelImpl.ClientSize => _finalSize;
         IMouseDevice ITopLevelImpl.MouseDevice => _mouse;
 
-        double ITopLevelImpl.Scaling => PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice.M11 ?? 1;
+        double ITopLevelImpl.RenderScaling => PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice.M11 ?? 1;
 
         IEnumerable<object> ITopLevelImpl.Surfaces => _surfaces;
 
@@ -142,27 +143,33 @@ namespace Avalonia.Win32.Interop.Wpf
         protected override void OnLostFocus(RoutedEventArgs e) => LostFocus?.Invoke();
 
 
-        InputModifiers GetModifiers()
+        RawInputModifiers GetModifiers(MouseEventArgs e)
         {
             var state = Keyboard.Modifiers;
-            var rv = default(InputModifiers);
+            var rv = default(RawInputModifiers);
             if (state.HasFlag(ModifierKeys.Windows))
-                rv |= InputModifiers.Windows;
+                rv |= RawInputModifiers.Meta;
             if (state.HasFlag(ModifierKeys.Alt))
-                rv |= InputModifiers.Alt;
+                rv |= RawInputModifiers.Alt;
             if (state.HasFlag(ModifierKeys.Control))
-                rv |= InputModifiers.Control;
+                rv |= RawInputModifiers.Control;
             if (state.HasFlag(ModifierKeys.Shift))
-                rv |= InputModifiers.Shift;
-            //TODO: mouse modifiers
-
-
+                rv |= RawInputModifiers.Shift;
+            if (e != null)
+            {
+                if (e.LeftButton == MouseButtonState.Pressed)
+                    rv |= RawInputModifiers.LeftMouseButton;
+                if (e.RightButton == MouseButtonState.Pressed)
+                    rv |= RawInputModifiers.RightMouseButton;
+                if (e.MiddleButton == MouseButtonState.Pressed)
+                    rv |= RawInputModifiers.MiddleMouseButton;
+            }
             return rv;
         }
 
         void MouseEvent(RawPointerEventType type, MouseEventArgs e)
             => _ttl.Input?.Invoke(new RawPointerEventArgs(_mouse, (uint)e.Timestamp, _inputRoot, type,
-            e.GetPosition(this).ToAvaloniaPoint(), GetModifiers()));
+            e.GetPosition(this).ToAvaloniaPoint(), GetModifiers(e)));
 
         protected override void OnMouseDown(MouseButtonEventArgs e)
         {
@@ -201,22 +208,22 @@ namespace Avalonia.Win32.Interop.Wpf
 
         protected override void OnMouseWheel(MouseWheelEventArgs e) =>
             _ttl.Input?.Invoke(new RawMouseWheelEventArgs(_mouse, (uint) e.Timestamp, _inputRoot,
-                e.GetPosition(this).ToAvaloniaPoint(), new Vector(0, e.Delta), GetModifiers()));
+                e.GetPosition(this).ToAvaloniaPoint(), new Vector(0, e.Delta), GetModifiers(e)));
 
         protected override void OnMouseLeave(MouseEventArgs e) => MouseEvent(RawPointerEventType.LeaveWindow, e);
 
         protected override void OnKeyDown(KeyEventArgs e)
-            => _ttl.Input?.Invoke(new RawKeyEventArgs(_keyboard, (uint) e.Timestamp, RawKeyEventType.KeyDown,
+            => _ttl.Input?.Invoke(new RawKeyEventArgs(_keyboard, (uint) e.Timestamp, _inputRoot, RawKeyEventType.KeyDown,
                 (Key) e.Key,
-                GetModifiers()));
+                GetModifiers(null)));
 
         protected override void OnKeyUp(KeyEventArgs e)
-            => _ttl.Input?.Invoke(new RawKeyEventArgs(_keyboard, (uint)e.Timestamp, RawKeyEventType.KeyUp,
+            => _ttl.Input?.Invoke(new RawKeyEventArgs(_keyboard, (uint)e.Timestamp, _inputRoot, RawKeyEventType.KeyUp,
                 (Key)e.Key,
-                GetModifiers()));
+                GetModifiers(null)));
 
         protected override void OnTextInput(TextCompositionEventArgs e) 
-            => _ttl.Input?.Invoke(new RawTextInputEventArgs(_keyboard, (uint) e.Timestamp, e.Text));
+            => _ttl.Input?.Invoke(new RawTextInputEventArgs(_keyboard, (uint) e.Timestamp, _inputRoot, e.Text));
 
         void ITopLevelImpl.SetCursor(IPlatformHandle cursor)
         {
@@ -230,8 +237,11 @@ namespace Avalonia.Win32.Interop.Wpf
         Action<Rect> ITopLevelImpl.Paint { get; set; }
         Action<Size> ITopLevelImpl.Resized { get; set; }
         Action<double> ITopLevelImpl.ScalingChanged { get; set; }
+
+        Action<WindowTransparencyLevel> ITopLevelImpl.TransparencyLevelChanged { get; set; }
+
         Action ITopLevelImpl.Closed { get; set; }
-        public new event Action LostFocus;
+        public new Action LostFocus { get; set; }
 
         internal Vector GetScaling()
         {
@@ -240,5 +250,13 @@ namespace Avalonia.Win32.Interop.Wpf
                 return new Vector(1, 1);
             return new Vector(src.TransformToDevice.M11, src.TransformToDevice.M22);
         }
+
+        public IPopupImpl CreatePopup() => null;
+
+        public void SetTransparencyLevelHint(WindowTransparencyLevel transparencyLevel) { }
+
+        public WindowTransparencyLevel TransparencyLevel { get; private set; }
+
+        public AcrylicPlatformCompensationLevels AcrylicCompensationLevels { get; } = new AcrylicPlatformCompensationLevels(1, 1, 1);
     }
 }

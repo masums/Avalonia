@@ -39,6 +39,7 @@ namespace Avalonia.Controls
         public static readonly StyledProperty<bool> TopmostProperty =
             AvaloniaProperty.Register<WindowBase, bool>(nameof(Topmost));
 
+        private int _autoSizing;
         private bool _hasExecutedInitialLayoutPass;
         private bool _isActive;
         private bool _ignoreVisibilityChange;
@@ -47,12 +48,8 @@ namespace Avalonia.Controls
         static WindowBase()
         {
             IsVisibleProperty.OverrideDefaultValue<WindowBase>(false);
-            IsVisibleProperty.Changed.AddClassHandler<WindowBase>(x => x.IsVisibleChanged);
+            IsVisibleProperty.Changed.AddClassHandler<WindowBase>((x,e) => x.IsVisibleChanged(e));
 
-            MinWidthProperty.Changed.AddClassHandler<WindowBase>((w, e) => w.PlatformImpl?.SetMinMaxSize(new Size((double)e.NewValue, w.MinHeight), new Size(w.MaxWidth, w.MaxHeight)));
-            MinHeightProperty.Changed.AddClassHandler<WindowBase>((w, e) => w.PlatformImpl?.SetMinMaxSize(new Size(w.MinWidth, (double)e.NewValue), new Size(w.MaxWidth, w.MaxHeight)));
-            MaxWidthProperty.Changed.AddClassHandler<WindowBase>((w, e) => w.PlatformImpl?.SetMinMaxSize(new Size(w.MinWidth, w.MinHeight), new Size((double)e.NewValue, w.MaxHeight)));
-            MaxHeightProperty.Changed.AddClassHandler<WindowBase>((w, e) => w.PlatformImpl?.SetMinMaxSize(new Size(w.MinWidth, w.MinHeight), new Size(w.MaxWidth, (double)e.NewValue)));
             
             TopmostProperty.Changed.AddClassHandler<WindowBase>((w, e) => w.PlatformImpl?.SetTopmost((bool)e.NewValue));
         }
@@ -67,7 +64,6 @@ namespace Avalonia.Controls
             impl.Activated = HandleActivated;
             impl.Deactivated = HandleDeactivated;
             impl.PositionChanged = HandlePositionChanged;
-            this.GetObservable(ClientSizeProperty).Skip(1).Subscribe(x => PlatformImpl?.Resize(x));
         }
 
         /// <summary>
@@ -96,30 +92,13 @@ namespace Avalonia.Controls
             get { return _isActive; }
             private set { SetAndRaise(IsActiveProperty, ref _isActive, value); }
         }
-
-        /// <summary>
-        /// Gets or sets the window position in screen coordinates.
-        /// </summary>
-        public PixelPoint Position
-        {
-            get { return PlatformImpl?.Position ?? PixelPoint.Origin; }
-            set
-            {
-                if (PlatformImpl is IWindowBaseImpl impl)
-                    impl.Position = value;
-            }
-        }
         
         public Screens Screens { get; private set; }
 
         /// <summary>
         /// Whether an auto-size operation is in progress.
         /// </summary>
-        protected bool AutoSizing
-        {
-            get;
-            private set;
-        }
+        protected bool AutoSizing => _autoSizing > 0;
 
         /// <summary>
         /// Gets or sets the owner of the window.
@@ -127,7 +106,7 @@ namespace Avalonia.Controls
         public WindowBase Owner
         {
             get { return _owner; }
-            set { SetAndRaise(OwnerProperty, ref _owner, value); }
+            protected set { SetAndRaise(OwnerProperty, ref _owner, value); }
         }
 
         /// <summary>
@@ -180,7 +159,7 @@ namespace Avalonia.Controls
 
                 if (!_hasExecutedInitialLayoutPass)
                 {
-                    LayoutManager.ExecuteInitialLayoutPass(this);
+                    LayoutManager.ExecuteInitialLayoutPass();
                     _hasExecutedInitialLayoutPass = true;
                 }
                 PlatformImpl?.Show();
@@ -204,23 +183,8 @@ namespace Avalonia.Controls
         /// </remarks>
         protected IDisposable BeginAutoSizing()
         {
-            AutoSizing = true;
-            return Disposable.Create(() => AutoSizing = false);
-        }
-
-        /// <summary>
-        /// Carries out the arrange pass of the window.
-        /// </summary>
-        /// <param name="finalSize">The final window size.</param>
-        /// <returns>The <paramref name="finalSize"/> parameter unchanged.</returns>
-        protected override Size ArrangeOverride(Size finalSize)
-        {
-            using (BeginAutoSizing())
-            {
-                PlatformImpl?.Resize(finalSize);
-            }
-
-            return base.ArrangeOverride(PlatformImpl?.ClientSize ?? default(Size));
+            ++_autoSizing;
+            return Disposable.Create(() => --_autoSizing);
         }
 
         /// <summary>
@@ -257,15 +221,53 @@ namespace Avalonia.Controls
         /// <param name="clientSize">The new client size.</param>
         protected override void HandleResized(Size clientSize)
         {
-            if (!AutoSizing)
-            {
-                Width = clientSize.Width;
-                Height = clientSize.Height;
-            }
             ClientSize = clientSize;
             LayoutManager.ExecuteLayoutPass();
             Renderer?.Resized(clientSize);
         }
+
+        /// <summary>
+        /// Overrides the core measure logic for windows.
+        /// </summary>
+        /// <param name="availableSize">The available size.</param>
+        /// <returns>The measured size.</returns>
+        /// <remarks>
+        /// The layout logic for top-level windows is different than for other controls because
+        /// they don't have a parent, meaning that many layout properties handled by the default
+        /// MeasureCore (such as margins and alignment) make no sense.
+        /// </remarks>
+        protected override Size MeasureCore(Size availableSize)
+        {
+            ApplyStyling();
+            ApplyTemplate();
+
+            var constraint = LayoutHelper.ApplyLayoutConstraints(this, availableSize);
+
+            return MeasureOverride(constraint);
+        }
+
+        /// <summary>
+        /// Overrides the core arrange logic for windows.
+        /// </summary>
+        /// <param name="finalRect">The final arrange rect.</param>
+        /// <remarks>
+        /// The layout logic for top-level windows is different than for other controls because
+        /// they don't have a parent, meaning that many layout properties handled by the default
+        /// ArrangeCore (such as margins and alignment) make no sense.
+        /// </remarks>
+        protected override void ArrangeCore(Rect finalRect)
+        {
+            var constraint = ArrangeSetBounds(finalRect.Size);
+            var arrangeSize = ArrangeOverride(constraint);
+            Bounds = new Rect(arrangeSize);
+        }
+
+        /// <summary>
+        /// Called durung the arrange pass to set the size of the window.
+        /// </summary>
+        /// <param name="size">The requested size of the window.</param>
+        /// <returns>The actual size of the window.</returns>
+        protected virtual Size ArrangeSetBounds(Size size) => size;
 
         /// <summary>
         /// Handles a window position change notification from 
@@ -288,7 +290,7 @@ namespace Avalonia.Controls
 
             if (scope != null)
             {
-                FocusManager.Instance.SetFocusScope(scope);
+                FocusManager.Instance?.SetFocusScope(scope);
             }
 
             IsActive = true;
@@ -318,16 +320,5 @@ namespace Avalonia.Controls
                 }
             }
         }
-
-        /// <summary>
-        /// Starts moving a window with left button being held. Should be called from left mouse button press event handler
-        /// </summary>
-        public void BeginMoveDrag() => PlatformImpl?.BeginMoveDrag();
-
-        /// <summary>
-        /// Starts resizing a window. This function is used if an application has window resizing controls. 
-        /// Should be called from left mouse button press event handler
-        /// </summary>
-        public void BeginResizeDrag(WindowEdge edge) => PlatformImpl?.BeginResizeDrag(edge);
     }
 }

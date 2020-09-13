@@ -5,12 +5,12 @@ using System.Threading;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 
 namespace Avalonia.Controls.ApplicationLifetimes
 {
     public class ClassicDesktopStyleApplicationLifetime : IClassicDesktopStyleApplicationLifetime, IDisposable
     {
-        private readonly Application _app;
         private int _exitCode;
         private CancellationTokenSource _cts;
         private bool _isShuttingDown;
@@ -34,12 +34,11 @@ namespace Avalonia.Controls.ApplicationLifetimes
             _activeLifetime?._windows.Add((Window)sender);
         }
 
-        public ClassicDesktopStyleApplicationLifetime(Application app)
+        public ClassicDesktopStyleApplicationLifetime()
         {
             if (_activeLifetime != null)
                 throw new InvalidOperationException(
                     "Can not have multiple active ClassicDesktopStyleApplicationLifetime instances and the previously created one was not disposed");
-            _app = app;
             _activeLifetime = this;
         }
         
@@ -48,6 +47,11 @@ namespace Avalonia.Controls.ApplicationLifetimes
         /// <inheritdoc/>
         public event EventHandler<ControlledApplicationLifetimeExitEventArgs> Exit;
 
+        /// <summary>
+        /// Gets the arguments passed to the AppBuilder Start method.
+        /// </summary>
+        public string[] Args { get; set; }
+        
         /// <inheritdoc/>
         public ShutdownMode ShutdownMode { get; set; }
         
@@ -69,9 +73,6 @@ namespace Avalonia.Controls.ApplicationLifetimes
             else if (ShutdownMode == ShutdownMode.OnMainWindowClose && window == MainWindow)
                 Shutdown();
         }
-        
-        
-
 
         public void Shutdown(int exitCode = 0)
         {
@@ -103,7 +104,7 @@ namespace Avalonia.Controls.ApplicationLifetimes
             Startup?.Invoke(this, new ControlledApplicationLifetimeStartupEventArgs(args));
             _cts = new CancellationTokenSource();
             MainWindow?.Show();
-            _app.Run(_cts.Token);
+            Dispatcher.UIThread.MainLoop(_cts.Token);
             Environment.ExitCode = _exitCode;
             return _exitCode;
         }
@@ -124,9 +125,12 @@ namespace Avalonia
             this T builder, string[] args, ShutdownMode shutdownMode = ShutdownMode.OnLastWindowClose)
             where T : AppBuilderBase<T>, new()
         {
-            var lifetime = new ClassicDesktopStyleApplicationLifetime(builder.Instance) {ShutdownMode = shutdownMode};
-            builder.Instance.ApplicationLifetime = lifetime;
-            builder.SetupWithoutStarting();
+            var lifetime = new ClassicDesktopStyleApplicationLifetime()
+            {
+                Args = args,
+                ShutdownMode = shutdownMode
+            };
+            builder.SetupWithLifetime(lifetime);
             return lifetime.Start(args);
         }
     }

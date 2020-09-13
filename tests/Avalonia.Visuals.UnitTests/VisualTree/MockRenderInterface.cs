@@ -3,16 +3,17 @@ using System.Collections.Generic;
 using System.IO;
 using Avalonia.Media;
 using Avalonia.Platform;
+using Avalonia.UnitTests;
+using Avalonia.Visuals.Media.Imaging;
 
 namespace Avalonia.Visuals.UnitTests.VisualTree
 {
     class MockRenderInterface : IPlatformRenderInterface
     {
-        public IEnumerable<string> InstalledFontNames => new string[0];
-
         public IFormattedTextImpl CreateFormattedText(
             string text,
             Typeface typeface,
+            double fontSize,
             TextAlignment textAlignment,
             TextWrapping wrapping,
             Size constraint,
@@ -46,12 +47,26 @@ namespace Avalonia.Visuals.UnitTests.VisualTree
             throw new NotImplementedException();
         }
 
-        public IBitmapImpl LoadBitmap(PixelFormat format, IntPtr data, PixelSize size, Vector dpi, int stride)
+        public IBitmapImpl LoadBitmap(PixelFormat format, AlphaFormat alphaFormat, IntPtr data, PixelSize size, Vector dpi, int stride)
         {
             throw new NotImplementedException();
         }
 
-        public IWriteableBitmapImpl CreateWriteableBitmap(PixelSize size, Vector dpi, PixelFormat? fmt)
+        public IGlyphRunImpl CreateGlyphRun(GlyphRun glyphRun, out double width)
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool SupportsIndividualRoundRects { get; set; }
+        public AlphaFormat DefaultAlphaFormat { get; }
+        public PixelFormat DefaultPixelFormat { get; }
+
+        public IFontManagerImpl CreateFontManager()
+        {
+            return new MockFontManagerImpl();
+        }
+
+        public IWriteableBitmapImpl CreateWriteableBitmap(PixelSize size, Vector dpi, PixelFormat fmt, AlphaFormat alphaFormat)
         {
             throw new NotImplementedException();
         }
@@ -67,6 +82,21 @@ namespace Avalonia.Visuals.UnitTests.VisualTree
         }
 
         public IGeometryImpl CreateRectangleGeometry(Rect rect)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IBitmapImpl LoadBitmapToWidth(Stream stream, int width, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IBitmapImpl LoadBitmapToHeight(Stream stream, int height, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IBitmapImpl ResizeBitmap(IBitmapImpl bitmapImpl, PixelSize destinationSize, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
         {
             throw new NotImplementedException();
         }
@@ -96,7 +126,7 @@ namespace Avalonia.Visuals.UnitTests.VisualTree
                 return _impl.FillContains(point);
             }
 
-            public Rect GetRenderBounds(Pen pen)
+            public Rect GetRenderBounds(IPen pen)
             {
                 throw new NotImplementedException();
             }
@@ -111,7 +141,7 @@ namespace Avalonia.Visuals.UnitTests.VisualTree
                 return _impl;
             }
 
-            public bool StrokeContains(Pen pen, Point point)
+            public bool StrokeContains(IPen pen, Point point)
             {
                 throw new NotImplementedException();
             }

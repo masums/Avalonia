@@ -1,7 +1,5 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using Avalonia.Controls.Primitives;
+using Avalonia.Layout;
 using Avalonia.LogicalTree;
 using Xunit;
 
@@ -69,7 +67,7 @@ namespace Avalonia.Controls.UnitTests.Primitives
             target.Measure(new Size(100, 100));
             target.Arrange(new Rect(0, 0, 100, 100));
 
-            Assert.Equal(new Rect(33, 0, 34, 12), thumb.Bounds);
+            Assert.Equal(new Rect(33, 0, 33, 12), thumb.Bounds);
         }
 
         [Fact]
@@ -94,7 +92,7 @@ namespace Avalonia.Controls.UnitTests.Primitives
             target.Measure(new Size(100, 100));
             target.Arrange(new Rect(0, 0, 100, 100));
 
-            Assert.Equal(new Rect(0, 33, 12, 34), thumb.Bounds);
+            Assert.Equal(new Rect(0, 33, 12, 33), thumb.Bounds);
         }
 
         [Fact]

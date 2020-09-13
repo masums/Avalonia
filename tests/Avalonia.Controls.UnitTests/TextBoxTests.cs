@@ -1,13 +1,12 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Reactive.Linq;
+using System.Threading.Tasks;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.UnitTests;
@@ -18,6 +17,46 @@ namespace Avalonia.Controls.UnitTests
 {
     public class TextBoxTests
     {
+        [Fact]
+        public void Opening_Context_Menu_Does_not_Lose_Selection()
+        {
+            using (UnitTestApplication.Start(FocusServices))
+            {
+                var target1 = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "1234",
+                    ContextMenu = new TestContextMenu()
+                };
+
+                var target2 = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "5678"
+                };
+                
+                var sp = new StackPanel();
+                sp.Children.Add(target1);
+                sp.Children.Add(target2);
+
+                target1.ApplyTemplate();
+                target2.ApplyTemplate();
+                
+                var root = new TestRoot() { Child = sp };
+
+                target1.SelectionStart = 0;
+                target1.SelectionEnd = 3;
+                
+                target1.Focus();
+                Assert.False(target2.IsFocused);
+                Assert.True(target1.IsFocused);
+
+                target2.Focus();
+                
+                Assert.Equal("123", target1.SelectedText);
+            }
+        }
+        
         [Fact]
         public void DefaultBindingMode_Should_Be_TwoWay()
         {
@@ -55,7 +94,7 @@ namespace Avalonia.Controls.UnitTests
                     Text = "1234"
                 };
 
-                RaiseKeyEvent(target, Key.A, InputModifiers.Control);
+                RaiseKeyEvent(target, Key.A, KeyModifiers.Control);
 
                 Assert.Equal(0, target.SelectionStart);
                 Assert.Equal(4, target.SelectionEnd);
@@ -72,7 +111,7 @@ namespace Avalonia.Controls.UnitTests
                     Template = CreateTemplate()
                 };
 
-                RaiseKeyEvent(target, Key.A, InputModifiers.Control);
+                RaiseKeyEvent(target, Key.A, KeyModifiers.Control);
 
                 Assert.Equal(0, target.SelectionStart);
                 Assert.Equal(0, target.SelectionEnd);
@@ -90,7 +129,7 @@ namespace Avalonia.Controls.UnitTests
                     Text = "1234"
                 };
 
-                RaiseKeyEvent(target, Key.Z, InputModifiers.Control);
+                RaiseKeyEvent(target, Key.Z, KeyModifiers.Control);
 
                 Assert.Equal("1234", target.Text);
             }
@@ -136,29 +175,29 @@ namespace Avalonia.Controls.UnitTests
                 };
 
                 // (First| Second Third Fourth)
-                RaiseKeyEvent(textBox, Key.Back, InputModifiers.Control);
+                RaiseKeyEvent(textBox, Key.Back, KeyModifiers.Control);
                 Assert.Equal(" Second Third Fourth", textBox.Text);
 
                 // ( Second |Third Fourth)
                 textBox.CaretIndex = 8;
-                RaiseKeyEvent(textBox, Key.Back, InputModifiers.Control);
+                RaiseKeyEvent(textBox, Key.Back, KeyModifiers.Control);
                 Assert.Equal(" Third Fourth", textBox.Text);
 
                 // ( Thi|rd Fourth)
                 textBox.CaretIndex = 4;
-                RaiseKeyEvent(textBox, Key.Back, InputModifiers.Control);
+                RaiseKeyEvent(textBox, Key.Back, KeyModifiers.Control);
                 Assert.Equal(" rd Fourth", textBox.Text);
 
                 // ( rd F[ou]rth)
                 textBox.SelectionStart = 5;
                 textBox.SelectionEnd = 7;
 
-                RaiseKeyEvent(textBox, Key.Back, InputModifiers.Control);
+                RaiseKeyEvent(textBox, Key.Back, KeyModifiers.Control);
                 Assert.Equal(" rd Frth", textBox.Text);
 
                 // ( |rd Frth)
                 textBox.CaretIndex = 1;
-                RaiseKeyEvent(textBox, Key.Back, InputModifiers.Control);
+                RaiseKeyEvent(textBox, Key.Back, KeyModifiers.Control);
                 Assert.Equal("rd Frth", textBox.Text);
             }
         }
@@ -175,30 +214,30 @@ namespace Avalonia.Controls.UnitTests
                 };
 
                 // (First Second Third |Fourth)
-                RaiseKeyEvent(textBox, Key.Delete, InputModifiers.Control);
+                RaiseKeyEvent(textBox, Key.Delete, KeyModifiers.Control);
                 Assert.Equal("First Second Third ", textBox.Text);
 
                 // (First Second |Third )
                 textBox.CaretIndex = 13;
-                RaiseKeyEvent(textBox, Key.Delete, InputModifiers.Control);
+                RaiseKeyEvent(textBox, Key.Delete, KeyModifiers.Control);
                 Assert.Equal("First Second ", textBox.Text);
 
                 // (First Sec|ond )
                 textBox.CaretIndex = 9;
-                RaiseKeyEvent(textBox, Key.Delete, InputModifiers.Control);
+                RaiseKeyEvent(textBox, Key.Delete, KeyModifiers.Control);
                 Assert.Equal("First Sec", textBox.Text);
 
                 // (Fi[rs]t Sec )
                 textBox.SelectionStart = 2;
                 textBox.SelectionEnd = 4;
 
-                RaiseKeyEvent(textBox, Key.Delete, InputModifiers.Control);
+                RaiseKeyEvent(textBox, Key.Delete, KeyModifiers.Control);
                 Assert.Equal("Fit Sec", textBox.Text);
 
                 // (Fit Sec| )
                 textBox.Text += " ";
                 textBox.CaretIndex = 7;
-                RaiseKeyEvent(textBox, Key.Delete, InputModifiers.Control);
+                RaiseKeyEvent(textBox, Key.Delete, KeyModifiers.Control);
                 Assert.Equal("Fit Sec", textBox.Text);
             }
         }
@@ -385,6 +424,85 @@ namespace Avalonia.Controls.UnitTests
                 Assert.True(target.SelectionEnd <= "123".Length);
             }
         }
+
+        [Fact]
+        public void SelectedText_Changes_OnSelectionChange()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "0123456789"
+                };
+
+                Assert.True(target.SelectedText == "");
+
+                target.SelectionStart = 2;
+                target.SelectionEnd = 4;
+
+                Assert.True(target.SelectedText == "23");
+            }
+        }
+
+        [Fact]
+        public void SelectedText_EditsText()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "0123"
+                };
+
+                target.SelectedText = "AA";
+                Assert.True(target.Text == "AA0123");
+
+                target.SelectionStart = 1;
+                target.SelectionEnd = 3;
+                target.SelectedText = "BB";
+
+                Assert.True(target.Text == "ABB123");
+            }
+        }
+
+        [Fact]
+        public void SelectedText_CanClearText()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "0123"
+                };
+                target.SelectionStart = 1;
+                target.SelectionEnd = 3;
+                target.SelectedText = "";
+
+                Assert.True(target.Text == "03");
+            }
+        }
+
+        [Fact]
+        public void SelectedText_NullClearsText()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "0123"
+                };
+                target.SelectionStart = 1;
+                target.SelectionEnd = 3;
+                target.SelectedText = null;
+
+                Assert.True(target.Text == "03");
+            }
+        }
+
         [Fact]
         public void CoerceCaretIndex_Doesnt_Cause_Exception_with_malformed_line_ending()
         {
@@ -443,6 +561,75 @@ namespace Avalonia.Controls.UnitTests
                 Assert.Equal(1, lfcount);
             }
         }
+        
+        [Fact]
+        public void TextBox_CaretIndex_Persists_When_Focus_Lost()
+        {
+            using (UnitTestApplication.Start(FocusServices))
+            {
+                var target1 = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "1234"
+                };
+                var target2 = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "5678"
+                };
+                var sp = new StackPanel();
+                sp.Children.Add(target1);
+                sp.Children.Add(target2);
+
+                target1.ApplyTemplate();
+                target2.ApplyTemplate();
+                
+                var root = new TestRoot { Child = sp };
+
+                target2.Focus();
+                target2.CaretIndex = 2;
+                Assert.False(target1.IsFocused);
+                Assert.True(target2.IsFocused);
+
+                target1.Focus();
+                
+                Assert.Equal(2, target2.CaretIndex);
+            }
+        }
+        
+        [Fact]
+        public void TextBox_Reveal_Password_Reset_When_Lost_Focus()
+        {
+            using (UnitTestApplication.Start(FocusServices))
+            {
+                var target1 = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "1234",
+                    PasswordChar = '*'
+                };
+                var target2 = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "5678"
+                };
+                var sp = new StackPanel();
+                sp.Children.Add(target1);
+                sp.Children.Add(target2);
+
+                target1.ApplyTemplate();
+                target2.ApplyTemplate();
+                
+                var root = new TestRoot { Child = sp };
+
+                target1.Focus();
+                target1.RevealPassword = true;
+                
+                target2.Focus();
+                
+                Assert.False(target1.RevealPassword);
+            }
+        }
 
         [Fact]
         public void Setting_Bound_Text_To_Null_Works()
@@ -457,6 +644,52 @@ namespace Avalonia.Controls.UnitTests
                 Assert.Equal("bar", target.Text);
                 source.Bar = null;
                 Assert.Null(target.Text);
+            }
+        }
+
+        [Fact]
+        public void Text_Box_MaxLength_Work_Properly()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "abc",
+                    MaxLength = 3,
+                };
+
+                RaiseKeyEvent(target, Key.D, KeyModifiers.None);
+
+                Assert.Equal("abc", target.Text);
+            }
+        }
+
+        [Theory]
+        [InlineData(Key.X, KeyModifiers.Control)]
+        [InlineData(Key.Back, KeyModifiers.None)]
+        [InlineData(Key.Delete, KeyModifiers.None)]
+        [InlineData(Key.Tab, KeyModifiers.None)]
+        [InlineData(Key.Enter, KeyModifiers.None)]
+        public void Keys_Allow_Undo(Key key, KeyModifiers modifiers)
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "0123",
+                    AcceptsReturn = true,
+                    AcceptsTab = true
+                };
+                target.SelectionStart = 1;
+                target.SelectionEnd = 3;
+                AvaloniaLocator.CurrentMutable
+                    .Bind<Input.Platform.IClipboard>().ToSingleton<ClipboardStub>();
+
+                RaiseKeyEvent(target, key, modifiers);
+                RaiseKeyEvent(target, Key.Z, KeyModifiers.Control); // undo
+                Assert.True(target.Text == "0123");
             }
         }
 
@@ -486,12 +719,12 @@ namespace Avalonia.Controls.UnitTests
                 }.RegisterInNameScope(scope));
         }
 
-        private void RaiseKeyEvent(TextBox textBox, Key key, InputModifiers inputModifiers)
+        private void RaiseKeyEvent(TextBox textBox, Key key, KeyModifiers inputModifiers)
         {
             textBox.RaiseEvent(new KeyEventArgs
             {
                 RoutedEvent = InputElement.KeyDownEvent,
-                Modifiers = inputModifiers,
+                KeyModifiers = inputModifiers,
                 Key = key
             });
         }
@@ -520,6 +753,28 @@ namespace Avalonia.Controls.UnitTests
             {
                 get { return _bar; }
                 set { _bar = value; RaisePropertyChanged(); }
+            }
+        }
+
+        private class ClipboardStub : IClipboard // in order to get tests working that use the clipboard
+        {
+            public Task<string> GetTextAsync() => Task.FromResult("");
+
+            public Task SetTextAsync(string text) => Task.CompletedTask;
+
+            public Task ClearAsync() => Task.CompletedTask;
+            public Task SetDataObjectAsync(IDataObject data) => Task.CompletedTask;
+
+            public Task<string[]> GetFormatsAsync() => Task.FromResult(Array.Empty<string>());
+
+            public Task<object> GetDataAsync(string format) => Task.FromResult((object)null);
+        }
+        
+        private class TestContextMenu : ContextMenu
+        {
+            public TestContextMenu()
+            {
+                IsOpen = true;
             }
         }
     }

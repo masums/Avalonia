@@ -18,6 +18,7 @@ namespace Avalonia.Rendering
     {
         private readonly IDispatcher _dispatcher;
         private List<IRenderLoopTask> _items = new List<IRenderLoopTask>();
+        private List<IRenderLoopTask> _itemsCopy = new List<IRenderLoopTask>();
         private IRenderTimer _timer;
         private int _inTick;
         private int _inUpdate;
@@ -63,11 +64,14 @@ namespace Avalonia.Rendering
             Contract.Requires<ArgumentNullException>(i != null);
             Dispatcher.UIThread.VerifyAccess();
 
-            _items.Add(i);
-
-            if (_items.Count == 1)
+            lock (_items)
             {
-                Timer.Tick += TimerTick;
+                _items.Add(i);
+
+                if (_items.Count == 1)
+                {
+                    Timer.Tick += TimerTick;
+                }
             }
         }
 
@@ -76,12 +80,14 @@ namespace Avalonia.Rendering
         {
             Contract.Requires<ArgumentNullException>(i != null);
             Dispatcher.UIThread.VerifyAccess();
-
-            _items.Remove(i);
-
-            if (_items.Count == 0)
+            lock (_items)
             {
-                Timer.Tick -= TimerTick;
+                _items.Remove(i);
+
+                if (_items.Count == 0)
+                {
+                    Timer.Tick -= TimerTick;
+                }
             }
         }
 
@@ -91,7 +97,19 @@ namespace Avalonia.Rendering
             {
                 try
                 {
-                    if (_items.Any(item => item.NeedsUpdate) &&
+                    bool needsUpdate = false;
+
+                    foreach (IRenderLoopTask item in _items)
+                    {
+                        if (item.NeedsUpdate)
+                        {
+                            needsUpdate = true;
+
+                            break;
+                        }
+                    }
+
+                    if (needsUpdate &&
                         Interlocked.CompareExchange(ref _inUpdate, 1, 0) == 0)
                     {
                         _dispatcher.Post(() =>
@@ -108,7 +126,7 @@ namespace Avalonia.Rendering
                                     }
                                     catch (Exception ex)
                                     {
-                                        Logger.Error(LogArea.Visual, this, "Exception in render update: {Error}", ex);
+                                        Logger.TryGet(LogEventLevel.Error, LogArea.Visual)?.Log(this, "Exception in render update: {Error}", ex);
                                     }
                                 }
                             }
@@ -117,14 +135,24 @@ namespace Avalonia.Rendering
                         }, DispatcherPriority.Render);
                     }
 
-                    for(int i = 0; i < _items.Count; i++)
+                    lock (_items)
                     {
-                        _items[i].Render();
+                        _itemsCopy.Clear();
+                        foreach (var i in _items)
+                            _itemsCopy.Add(i);
                     }
+
+                    for (int i = 0; i < _itemsCopy.Count; i++)
+                    {
+                        _itemsCopy[i].Render();
+                    }
+                    
+                    _itemsCopy.Clear();
+
                 }
                 catch (Exception ex)
                 {
-                    Logger.Error(LogArea.Visual, this, "Exception in render loop: {Error}", ex);
+                    Logger.TryGet(LogEventLevel.Error, LogArea.Visual)?.Log(this, "Exception in render loop: {Error}", ex);
                 }
                 finally
                 {

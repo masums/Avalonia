@@ -1,14 +1,16 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
 
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
+using System.Reactive.Linq;
 using Avalonia.Collections;
 using Avalonia.Controls.Generators;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Utils;
+using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
@@ -50,9 +52,10 @@ namespace Avalonia.Controls
         public static readonly StyledProperty<SelectionMode> SelectionModeProperty =
             ListBox.SelectionModeProperty.AddOwner<TreeView>();
 
-        private static readonly IList Empty = new object[0];
+        private static readonly IList Empty = Array.Empty<object>();
         private object _selectedItem;
         private IList _selectedItems;
+        private bool _syncingSelectedItems;
 
         /// <summary>
         /// Initializes static members of the <see cref="TreeView"/> class.
@@ -86,8 +89,6 @@ namespace Avalonia.Controls
             set => SetValue(AutoScrollToSelectedItemProperty, value);
         }
 
-        private bool _syncingSelectedItems;
-
         /// <summary>
         /// Gets or sets the selection mode.
         /// </summary>
@@ -100,16 +101,22 @@ namespace Avalonia.Controls
         /// <summary>
         /// Gets or sets the selected item.
         /// </summary>
+        /// <remarks>
+        /// Note that setting this property only currently works if the item is expanded to be visible.
+        /// To select non-expanded nodes use `Selection.SelectedIndex`.
+        /// </remarks>
         public object SelectedItem
         {
             get => _selectedItem;
             set
             {
+                var selectedItems = SelectedItems;
+
                 SetAndRaise(SelectedItemProperty, ref _selectedItem, value);
 
                 if (value != null)
                 {
-                    if (SelectedItems.Count != 1 || SelectedItems[0] != value)
+                    if (selectedItems.Count != 1 || selectedItems[0] != value)
                     {
                         _syncingSelectedItems = true;
                         SelectSingleItem(value);
@@ -124,7 +131,7 @@ namespace Avalonia.Controls
         }
 
         /// <summary>
-        /// Gets the selected items.
+        /// Gets or sets the selected items.
         /// </summary>
         public IList SelectedItems
         {
@@ -321,8 +328,8 @@ namespace Avalonia.Controls
             {
                 var changed = new SelectionChangedEventArgs(
                     SelectingItemsControl.SelectionChangedEvent,
-                    added ?? Empty,
-                    removed ?? Empty);
+                    removed ?? Empty,
+                    added ?? Empty);
                 RaiseEvent(changed);
             }
         }
@@ -362,7 +369,6 @@ namespace Avalonia.Controls
                 incc.CollectionChanged -= SelectedItemsCollectionChanged;
             }
         }
-
         (bool handled, IInputElement next) ICustomKeyboardNavigation.GetNext(IInputElement element,
             NavigationDirection direction)
         {
@@ -390,8 +396,7 @@ namespace Avalonia.Controls
                 TreeViewItem.HeaderProperty,
                 TreeViewItem.ItemTemplateProperty,
                 TreeViewItem.ItemsProperty,
-                TreeViewItem.IsExpandedProperty,
-                new TreeContainerIndex());
+                TreeViewItem.IsExpandedProperty);
             result.Index.Materialized += ContainerMaterialized;
             return result;
         }
@@ -404,7 +409,7 @@ namespace Avalonia.Controls
                 e.Handled = UpdateSelectionFromEventSource(
                     e.Source,
                     true,
-                    (e.InputModifiers & InputModifiers.Shift) != 0);
+                    (e.KeyModifiers & KeyModifiers.Shift) != 0);
             }
         }
 
@@ -468,7 +473,7 @@ namespace Avalonia.Controls
                     if (index > 0)
                     {
                         var previous = (TreeViewItem)parentGenerator.ContainerFromIndex(index - 1);
-                        result = previous.IsExpanded ?
+                        result = previous.IsExpanded && previous.ItemCount > 0 ?
                             (TreeViewItem)previous.ItemContainerGenerator.ContainerFromIndex(previous.ItemCount - 1) :
                             previous;
                     }
@@ -480,7 +485,7 @@ namespace Avalonia.Controls
                     break;
 
                 case NavigationDirection.Down:
-                    if (from.IsExpanded && intoChildren)
+                    if (from.IsExpanded && intoChildren && from.ItemCount > 0)
                     {
                         result = (TreeViewItem)from.ItemContainerGenerator.ContainerFromIndex(0);
                     }
@@ -504,14 +509,19 @@ namespace Avalonia.Controls
         {
             base.OnPointerPressed(e);
 
-            if (e.MouseButton == MouseButton.Left || e.MouseButton == MouseButton.Right)
+            if (e.Source is IVisual source)
             {
-                e.Handled = UpdateSelectionFromEventSource(
-                    e.Source,
-                    true,
-                    (e.InputModifiers & InputModifiers.Shift) != 0,
-                    (e.InputModifiers & InputModifiers.Control) != 0,
-                    e.MouseButton == MouseButton.Right);
+                var point = e.GetCurrentPoint(source);
+
+                if (point.Properties.IsLeftButtonPressed || point.Properties.IsRightButtonPressed)
+                {
+                    e.Handled = UpdateSelectionFromEventSource(
+                        e.Source,
+                        true,
+                        (e.KeyModifiers & KeyModifiers.Shift) != 0,
+                        (e.KeyModifiers & KeyModifiers.Control) != 0,
+                        point.Properties.IsRightButtonPressed);
+                }
             }
         }
 
